@@ -1,0 +1,119 @@
+# Marine Oil Spill Intelligence API
+
+Day 1 backend foundation for SIH 2026 Problem Statement PS 26143: AI-Powered Marine Oil Spill Detection & Vessel Attribution System.
+
+All detection, drift, and vessel attribution behavior is mocked for integration. Real ML inference, OpenDrift simulation, AIS scoring, and production database logic are intentionally deferred to later build days.
+
+## Start the Backend
+
+```bash
+cd backend
+python -m venv venv
+```
+
+Windows:
+
+```bash
+venv\Scripts\activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Open Swagger documentation:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+## Endpoints
+
+- `GET /` - project identity and documentation location
+- `GET /health` - service health check
+- `POST /detect` - Module A detection entrypoint; requires `image_path` and a trained checkpoint
+- `POST /drift` - Module B synthetic development hindcast/forecast response from explicit latitude/longitude input
+- `POST /score` - mocked AIS vessel attribution response
+- `POST /pipeline` - Day 2-safe pipeline contract; drift and attribution remain pending georeferenced detection output
+
+Example detection request:
+
+```json
+{
+  "image_path": "data/kaggle/data/Class_1/class_1_00001.jpg"
+}
+```
+
+If `backend/models/unet-baseline.pth` is missing, `/detect` returns `model_not_ready` instead of pretending an untrained model is detecting spills.
+
+## Module A Detection
+
+Inspect the dataset:
+
+```bash
+python ..\notebooks\detection\explore_dataset.py
+```
+
+Train the segmentation baseline only after real image/mask pairs are added:
+
+```bash
+python scripts\train_detection.py --dataset-root ..\data\kaggle --dataset-type classification --epochs 3 --batch-size 4 --image-size 256 --output-path models\unet-baseline.pth
+```
+
+The current `data/kaggle` dataset is binary chip classification data (`Class_0`, `Class_1`) and does not contain semantic segmentation masks. The training script detects this and skips training safely.
+
+Synthetic development smoke-test command:
+
+```bash
+python scripts\train_detection.py --dataset-root ..\data\synthetic_sar --dataset-type synthetic_dev --epochs 20 --batch-size 2 --image-size 128 --learning-rate 0.0001 --output-path models\unet-synthetic-dev.pth
+```
+
+The synthetic checkpoint name intentionally includes `synthetic` and `dev`. It is only for software pipeline validation and must not be presented as real Sentinel-1 model performance.
+
+## Module B Drift
+
+Development scenario:
+
+```json
+{
+  "latitude": 18.5204,
+  "longitude": 72.89,
+  "timestamp": "2026-08-26T12:00:00Z"
+}
+```
+
+The drift module currently uses `synthetic_dev` environmental forcing and a deterministic development drift engine. Real environmental NetCDF data and OpenDrift/OpenOil integration are prepared as future work.
+
+## Environment
+
+Copy `.env.example` to `.env` if local overrides are needed.
+
+```env
+APP_NAME=Marine Oil Spill Intelligence API
+APP_VERSION=0.1.0
+DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/DATABASE
+FRONTEND_ORIGIN=http://localhost:5173
+DETECTION_MODEL_PATH=models/unet-synthetic-dev.pth
+DRIFT_ENVIRONMENT_MODE=synthetic_dev
+DRIFT_BACKWARD_HOURS=6
+DRIFT_FORWARD_HOURS=6
+DRIFT_PARTICLE_COUNT=100
+DRIFT_RANDOM_SEED=42
+DRIFT_WINDAGE_FACTOR=0.03
+DRIFT_MAX_NEAREST_CURRENT_DISTANCE_KM=10.0
+DRIFT_ENVIRONMENT_DATA_PATH=
+```
+
+For local synthetic development only, override:
+
+```env
+DETECTION_MODEL_PATH=models/unet-synthetic-dev.pth
+```

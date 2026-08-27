@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+psycopg[binary]
+numpy
+pillow
+opencv-python
+torch
+torchvision
+xarray
+netCDF4
+cfgrib
+eccodes

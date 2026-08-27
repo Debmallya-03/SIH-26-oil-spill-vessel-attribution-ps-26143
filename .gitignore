@@ -1,0 +1,63 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ML checkpoints and generated model artifacts
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.h5
+*.pkl
+*.joblib
+*.weights
+backend/models/*
+!backend/models/.gitkeep
+
+# External datasets and environmental forcing
+data/kaggle/
+data/ocean/currents/*
+data/ocean/wind/*
+!data/ocean/currents/.gitkeep
+!data/ocean/wind/.gitkeep
+
+# Logs/temp/generated outputs
+*.log
+tmp/
+temp/
+artifacts/
+outputs/
+predictions/
+runs/

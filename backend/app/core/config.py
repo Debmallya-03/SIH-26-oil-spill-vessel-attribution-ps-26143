@@ -1,12 +1,22 @@
 from functools import lru_cache
+from pathlib import Path
+from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
     app_name: str = "Marine Oil Spill Intelligence API"
     app_version: str = "0.1.0"
-    database_url: str = "postgresql://USER:PASSWORD@localhost:5432/DATABASE"
+    database_url: str | None = None
+    database_host: str = "localhost"
+    database_port: int = 5432
+    database_name: str | None = None
+    database_user: str | None = None
+    database_password: str | None = None
+    database_connect_timeout_seconds: int = 2
     frontend_origin: str = "http://localhost:5173"
     detection_model_path: str = "backend/models/unet-baseline.pth"
     drift_environment_mode: str = "synthetic_dev"
@@ -27,10 +37,33 @@ class Settings(BaseSettings):
     ais_max_real_records: int = 20000
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=BACKEND_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def resolved_database_url(self) -> str:
+        if self.database_url and not self._is_placeholder_database_url(self.database_url):
+            return self.database_url
+        if not self.database_name or not self.database_user or not self.database_password:
+            raise ValueError("DATABASE_NAME, DATABASE_USER, and DATABASE_PASSWORD are required.")
+        user = quote(self.database_user, safe="")
+        password = quote(self.database_password, safe="")
+        return f"postgresql://{user}:{password}@{self.database_host}:{self.database_port}/{self.database_name}"
+
+    @property
+    def database_target(self) -> dict[str, str | int | None]:
+        return {
+            "host": self.database_host,
+            "port": self.database_port,
+            "database": self.database_name,
+            "user": self.database_user,
+        }
+
+    @staticmethod
+    def _is_placeholder_database_url(value: str) -> bool:
+        return "USER:PASSWORD" in value or value.endswith("/DATABASE")
 
 
 @lru_cache

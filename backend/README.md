@@ -1,8 +1,8 @@
 # Marine Oil Spill Intelligence API
 
-Day 1 backend foundation for SIH 2026 Problem Statement PS 26143: AI-Powered Marine Oil Spill Detection & Vessel Attribution System.
+Backend for SIH 2026 Problem Statement PS 26143: AI-Powered Marine Oil Spill Detection & Vessel Attribution System.
 
-All detection, drift, and vessel attribution behavior is mocked for integration. Real ML inference, OpenDrift simulation, AIS scoring, and production database logic are intentionally deferred to later build days.
+The backend now includes the Day-5 development pipeline across Module A detection, Module B drift, Module C AIS attribution, and optional PostgreSQL/PostGIS persistence. The current model, drift engine, and AIS scoring remain development validation components, not scientific or legal conclusions.
 
 ## Start the Backend
 
@@ -40,9 +40,12 @@ http://127.0.0.1:8000/docs
 - `GET /` - project identity and documentation location
 - `GET /health` - service health check
 - `POST /detect` - Module A detection entrypoint; requires `image_path` and a trained checkpoint
-- `POST /drift` - Module B synthetic development hindcast/forecast response from explicit latitude/longitude input
-- `POST /score` - mocked AIS vessel attribution response
-- `POST /pipeline` - Day 2-safe pipeline contract; drift and attribution remain pending georeferenced detection output
+- `POST /drift` - Module B drift hindcast/forecast from explicit latitude/longitude input
+- `POST /score` - Module C AIS vessel attribution and explainable ranking
+- `POST /pipeline` - Day-5 backend orchestration across detection, drift, attribution, and optional persistence
+- `GET /incidents` - list persisted pipeline incidents when PostGIS is available
+- `GET /incidents/{incident_id}` - retrieve a persisted incident with module outputs
+- `GET /incidents/{incident_id}/vessels` - retrieve persisted vessel candidates for an incident
 
 Example detection request:
 
@@ -90,7 +93,73 @@ Development scenario:
 }
 ```
 
-The drift module currently uses `synthetic_dev` environmental forcing and a deterministic development drift engine. Real environmental NetCDF data and OpenDrift/OpenOil integration are prepared as future work.
+The drift module supports `synthetic_dev` forcing and `real_data` forcing from local Copernicus current and NOAA GFS wind files. The engine remains the development drift engine, not OpenDrift/OpenOil.
+
+## Module C AIS Attribution
+
+Synthetic development scoring request:
+
+```json
+{
+  "origin_centroid": {
+    "latitude": 18.522014161747748,
+    "longitude": 72.78917658819358
+  },
+  "origin_time_window": {
+    "start": "2026-08-26T05:00:00Z",
+    "end": "2026-08-26T07:00:00Z"
+  },
+  "mode": "synthetic_dev"
+}
+```
+
+Module C returns ranked candidate vessels with factor scores and concise reasons. AIS gaps are treated as anomaly signals, not proof of wrongdoing.
+
+## Day-5 Pipeline
+
+Development demo request:
+
+```json
+{
+  "pipeline_mode": "demo",
+  "image_path": "data/synthetic_sar/images/sar_001.png",
+  "spill_seed": {
+    "latitude": 18.5,
+    "longitude": 72.8333511352539,
+    "timestamp": "2026-08-26T12:00:00Z"
+  },
+  "drift_mode": "real_data",
+  "attribution_mode": "synthetic_dev",
+  "persist": true
+}
+```
+
+`spill_seed` is required for drift and attribution because Module A currently returns image-space pixels, not georeferenced latitude/longitude.
+
+If PostgreSQL/PostGIS is unavailable, the pipeline still returns computed module output and reports persistence as unavailable.
+
+## Database
+
+Start PostGIS from the repository root:
+
+```bash
+docker compose up -d db
+```
+
+Initialize Day-5 tables from `backend/`:
+
+```bash
+python scripts/init_db.py
+```
+
+Tables created:
+
+```text
+incidents
+detections
+drift_runs
+vessel_candidates
+```
 
 ## Environment
 
@@ -99,7 +168,12 @@ Copy `.env.example` to `.env` if local overrides are needed.
 ```env
 APP_NAME=Marine Oil Spill Intelligence API
 APP_VERSION=0.1.0
-DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/DATABASE
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=oilspill
+DATABASE_USER=oilspill_user
+DATABASE_PASSWORD=change_me_for_local_dev
+DATABASE_CONNECT_TIMEOUT_SECONDS=2
 FRONTEND_ORIGIN=http://localhost:5173
 DETECTION_MODEL_PATH=models/unet-synthetic-dev.pth
 DRIFT_ENVIRONMENT_MODE=synthetic_dev

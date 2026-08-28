@@ -13,3 +13,4 @@ xarray
 netCDF4
 cfgrib
 eccodes
+zstandard

@@ -110,6 +110,12 @@ DRIFT_RANDOM_SEED=42
 DRIFT_WINDAGE_FACTOR=0.03
 DRIFT_MAX_NEAREST_CURRENT_DISTANCE_KM=10.0
 DRIFT_ENVIRONMENT_DATA_PATH=
+AIS_MODE=synthetic_dev
+AIS_DATA_PATH=
+AIS_CANDIDATE_RADIUS_KM=25.0
+AIS_TIME_BUFFER_HOURS=2.0
+AIS_GAP_THRESHOLD_MINUTES=15.0
+AIS_MAX_REAL_RECORDS=20000
 ```
 
 For local synthetic development only, override:
@@ -117,3 +123,25 @@ For local synthetic development only, override:
 ```env
 DETECTION_MODEL_PATH=models/unet-synthetic-dev.pth
 ```
+
+For real AIS scoring, keep raw AIS files outside Git and set either the raw compressed source:
+
+```env
+AIS_MODE=real_data
+AIS_DATA_PATH=../data/ais/raw/ais-2024-01-14.csv.zst
+```
+
+or the recommended small repeatable validation subset:
+
+```env
+AIS_MODE=real_data
+AIS_DATA_PATH=../data/ais/processed/ais_real_validation.csv
+```
+
+Build the subset with:
+
+```bash
+python scripts\validate_real_ais.py --input ..\..\data\ais\raw\ais-2024-01-14.csv.zst --output ..\..\data\ais\processed\ais_real_validation.csv
+```
+
+The real AIS dataset validates ingestion, trajectory reconstruction, filtering, and scoring behavior. It does not represent the Mumbai oil-spill demonstration scenario.

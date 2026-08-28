@@ -6,12 +6,13 @@ This directory contains local development data for SIH 2026 PS 26143. External d
 
 ```text
 data/
-├── README.md
-├── kaggle/              # external / ignored
-├── synthetic_sar/       # small development smoke-test assets
-└── ocean/
-    ├── currents/        # external Copernicus NetCDF / ignored
-    └── wind/            # external NOAA GFS GRIB2 / ignored
+|-- README.md
+|-- kaggle/              # external / ignored
+|-- synthetic_sar/       # small development smoke-test assets
+|-- ais/                 # external AIS files / ignored
+`-- ocean/
+    |-- currents/        # external Copernicus NetCDF / ignored
+    `-- wind/            # external NOAA GFS GRIB2 / ignored
 ```
 
 ## Kaggle SAR Classification Dataset
@@ -49,6 +50,34 @@ Git policy: may be committed if the team wants reproducible smoke tests. These s
 The synthetic development masks are aligned to their corresponding image dimensions using nearest-neighbour interpolation solely for software pipeline smoke testing.
 
 This alignment policy must not be applied blindly to real scientific datasets.
+
+## AIS Vessel Tracks
+
+Purpose: real vessel trajectory input for Module C scoring.
+
+Expected folder:
+
+```text
+data/ais/
+```
+
+Expected files: CSV, `.csv.zst`, or parquet files containing MMSI, timestamp, latitude, longitude, SOG, and COG. Optional columns may include vessel name, ship type, heading, and navigation status.
+
+Raw path:
+
+```text
+data/ais/raw/ais-2024-01-14.csv.zst
+```
+
+Processed validation subset:
+
+```text
+data/ais/processed/ais_real_validation.csv
+```
+
+Git policy: do not commit raw AIS files. AIS exports can be large, source-controlled, or operationally sensitive. Store raw files locally and point `AIS_DATA_PATH` at either the raw compressed source or the small processed validation subset.
+
+The real AIS dataset validates ingestion, trajectory reconstruction, filtering, and scoring behavior. It does not represent the Mumbai oil-spill demonstration scenario.
 
 ## Copernicus Marine Current Data
 

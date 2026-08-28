@@ -48,6 +48,8 @@ backend/models/*
 
 # External datasets and environmental forcing
 data/kaggle/
+data/ais/raw/*
+!data/ais/raw/.gitkeep
 data/ocean/currents/*
 data/ocean/wind/*
 !data/ocean/currents/.gitkeep

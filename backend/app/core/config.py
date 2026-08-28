@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     drift_environment_data_path: str | None = None
     drift_current_data_path: str = "../data/ocean/currents/cmems_mod_glo_phy-cur_anfc_0.083deg_PT6H-i_1787833203663.nc"
     drift_wind_data_glob: str = "../data/ocean/wind/gfs.t06z.pgrb2.0p25.f*"
+    ais_mode: str = "synthetic_dev"
+    ais_data_path: str | None = None
+    ais_candidate_radius_km: float = 25.0
+    ais_time_buffer_hours: float = 2.0
+    ais_gap_threshold_minutes: float = 15.0
+    ais_max_real_records: int = 20000
 
     model_config = SettingsConfigDict(
         env_file=".env",

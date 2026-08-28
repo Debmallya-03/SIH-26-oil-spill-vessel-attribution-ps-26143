@@ -17,7 +17,15 @@ def detect_oil_spill(request: DetectionRequest | None = None) -> DetectionRespon
         )
 
     image_path = Path(request.image_path)
-    prediction = predict_spill(image_path)
+    try:
+        prediction = predict_spill(image_path)
+    except FileNotFoundError as exc:
+        return DetectionResponse(
+            status="image_not_found",
+            spill_detected=None,
+            model="small-unet-synthetic-dev",
+            message=str(exc),
+        )
     if prediction.status != "success" or prediction.mask is None:
         return DetectionResponse(
             status=prediction.status,

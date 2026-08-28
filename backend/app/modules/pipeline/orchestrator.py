@@ -52,7 +52,7 @@ def run_pipeline(request: PipelineRequest | None = None) -> PipelineResponse:
     if detection.status != "success":
         status = "partial" if pipeline_request.pipeline_mode != "detection_only" else "failed"
         failed_stage = "detection"
-        message = "Detection did not complete; downstream stages were skipped."
+        message = detection.message or "Detection did not complete; downstream stages were skipped."
     elif pipeline_request.pipeline_mode == "detection_only":
         status = "completed"
         message = "Detection-only pipeline completed; no geospatial seed was requested."

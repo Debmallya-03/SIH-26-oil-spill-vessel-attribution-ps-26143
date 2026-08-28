@@ -3,14 +3,32 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+BACKEND_ROOT = Path(__file__).resolve().parents[3]
+
 
 def load_image(image_path: str | Path) -> np.ndarray:
-    path = Path(image_path)
+    path = resolve_image_path(image_path)
     if not path.exists():
         raise FileNotFoundError(f"Image not found: {path}")
 
     image = Image.open(path).convert("RGB")
     return np.asarray(image)
+
+
+def resolve_image_path(image_path: str | Path) -> Path:
+    path = Path(image_path)
+    candidates = [path] if path.is_absolute() else [path, BACKEND_ROOT / path, REPO_ROOT / path]
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if _is_allowed_project_path(resolved) and resolved.exists():
+            return resolved
+    return candidates[-1].resolve()
+
+
+def _is_allowed_project_path(path: Path) -> bool:
+    allowed_roots = (REPO_ROOT.resolve(), BACKEND_ROOT.resolve())
+    return any(path == root or root in path.parents for root in allowed_roots)
 
 
 def resize_image(image: np.ndarray, image_size: int) -> np.ndarray:

@@ -166,7 +166,7 @@ class PipelineIntegrationTests(unittest.TestCase):
             drift_called = True
             return _fake_drift()
 
-        previous = self._patch_orchestrator(drift=drift_stub)
+        previous = self._patch_orchestrator(detection=orchestrator.detect_oil_spill, drift=drift_stub)
         try:
             result = orchestrator.run_pipeline(
                 PipelineRequest(
@@ -202,6 +202,33 @@ class PipelineIntegrationTests(unittest.TestCase):
 
         self.assertEqual(result.status, "partial")
         self.assertEqual(result.failed_stage, "detection")
+        self.assertFalse(drift_called)
+        self.assertEqual(result.message, "checkpoint missing")
+
+    def test_pipeline_reports_missing_image_without_running_downstream_stages(self) -> None:
+        drift_called = False
+
+        def drift_stub(request):
+            nonlocal drift_called
+            drift_called = True
+            return _fake_drift()
+
+        previous = self._patch_orchestrator(detection=orchestrator.detect_oil_spill, drift=drift_stub)
+        try:
+            result = orchestrator.run_pipeline(
+                PipelineRequest(
+                    pipeline_mode="demo",
+                    image_path="../data/synthetic_sar/images/does-not-exist.png",
+                    spill_seed=SpillSeed(latitude=18.5, longitude=72.8333511352539, timestamp=DEMO_TIME),
+                    persist=False,
+                )
+            )
+        finally:
+            self._restore_orchestrator(previous)
+
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(result.failed_stage, "detection")
+        self.assertIn("Image not found", result.message)
         self.assertFalse(drift_called)
 
     def test_pipeline_keeps_result_when_database_is_unavailable(self) -> None:

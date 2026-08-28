@@ -13,7 +13,7 @@ from app.modules.detection.dataset import SARSegmentationDataset, find_segmentat
 from app.modules.detection.inference import predict_spill
 from app.modules.detection.model import build_model
 from app.modules.detection.postprocess import extract_spill_geometry
-from app.modules.detection.preprocess import preprocess_image, resize_mask
+from app.modules.detection.preprocess import preprocess_image, resize_mask, resolve_image_path
 
 
 class DetectionModuleTests(unittest.TestCase):
@@ -33,6 +33,12 @@ class DetectionModuleTests(unittest.TestCase):
         self.assertEqual(image.dtype, np.float32)
         self.assertGreaterEqual(float(image.min()), 0.0)
         self.assertLessEqual(float(image.max()), 1.0)
+
+    def test_resolve_image_path_supports_backend_and_repo_relative_paths(self) -> None:
+        actual = REPO_ROOT / "data" / "synthetic_sar" / "images" / "sar_001.png"
+
+        self.assertEqual(resolve_image_path("../data/synthetic_sar/images/sar_001.png"), actual)
+        self.assertEqual(resolve_image_path("data/synthetic_sar/images/sar_001.png"), actual)
 
     def test_dataset_summary_reports_no_segmentation_masks(self) -> None:
         summary = summarize_dataset(REPO_ROOT / "data" / "kaggle")

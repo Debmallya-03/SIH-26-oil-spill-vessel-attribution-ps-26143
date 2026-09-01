@@ -54,6 +54,7 @@ backend/models/*
 
 # External datasets and environmental forcing
 data/kaggle/
+data/deep_sar_sos/
 data/ais/raw/*
 !data/ais/raw/.gitkeep
 data/ocean/currents/*
@@ -63,6 +64,7 @@ data/ocean/wind/*
 
 # Logs/temp/generated outputs
 *.log
+.mpl-cache/
 tmp/
 temp/
 artifacts/

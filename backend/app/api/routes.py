@@ -6,6 +6,7 @@ from app.db import repository
 from app.db.connection import DatabaseUnavailableError, check_database_status
 from app.modules.attribution.service import score_suspect_vessels
 from app.modules.detection.service import detect_oil_spill
+from app.modules.drift.opendrift_engine import get_opendrift_capability
 from app.modules.drift.service import estimate_drift
 from app.modules.pipeline.service import execute_pipeline
 from app.schemas.drift import DriftRequest, DriftResponse
@@ -43,6 +44,7 @@ def health_check() -> dict[str, object]:
             "status": database_status,
             "message": None if database_status == "connected" else "Database is not available.",
         },
+        "opendrift": get_opendrift_capability(),
     }
 
 

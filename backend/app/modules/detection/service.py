@@ -47,4 +47,6 @@ def detect_oil_spill(request: DetectionRequest | None = None) -> DetectionRespon
         polygon=geometry.polygon,
         confidence=prediction.confidence,
         model=prediction.model_name,
+        model_dataset_type=prediction.dataset_type,
+        image_size=prediction.image_size,
     )

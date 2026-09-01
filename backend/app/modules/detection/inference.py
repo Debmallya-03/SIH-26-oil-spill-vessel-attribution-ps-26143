@@ -19,6 +19,8 @@ class PredictionResult:
     confidence: float | None
     model_name: str
     message: str | None = None
+    dataset_type: str | None = None
+    image_size: int | None = None
 
 
 def resolve_checkpoint_path(checkpoint_path: str | Path | None = None) -> Path:
@@ -38,6 +40,8 @@ def resolve_checkpoint_path(checkpoint_path: str | Path | None = None) -> Path:
 
 
 def checkpoint_model_name(checkpoint: Path, state: dict | None = None) -> str:
+    if state and state.get("dataset_type") == "deep_sar_sos":
+        return "small-unet-deep-sar-sos"
     if state and state.get("dataset_notice"):
         return "small-unet-synthetic-dev"
     lowered_name = checkpoint.name.lower()
@@ -63,13 +67,18 @@ def predict_spill(
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = build_model("small_unet").to(device)
     state = torch.load(checkpoint, map_location=device)
     model_name = checkpoint_model_name(checkpoint, state if isinstance(state, dict) else None)
+    metadata = state if isinstance(state, dict) else {}
+    architecture = metadata.get("architecture", "small_unet")
+    input_channels = int(metadata.get("input_channels", 3))
+    output_classes = int(metadata.get("output_classes", 1))
+    checkpoint_image_size = int(metadata.get("image_size", image_size))
+    model = build_model(architecture, in_channels=input_channels, out_channels=output_classes).to(device)
     model.load_state_dict(state["model_state_dict"] if "model_state_dict" in state else state)
     model.eval()
 
-    image = preprocess_image(image_path, image_size=image_size)
+    image = preprocess_image(image_path, image_size=checkpoint_image_size, input_channels=input_channels)
     tensor = torch.from_numpy(to_chw_tensor_array(image)).unsqueeze(0).to(device)
 
     with torch.no_grad():
@@ -83,4 +92,6 @@ def predict_spill(
         mask=mask,
         confidence=confidence,
         model_name=model_name,
+        dataset_type=metadata.get("dataset_type"),
+        image_size=checkpoint_image_size,
     )

@@ -68,6 +68,8 @@ def run_pipeline(request: PipelineRequest | None = None) -> PipelineResponse:
                     longitude=pipeline_request.spill_seed.longitude,
                     timestamp=pipeline_request.spill_seed.timestamp,
                     mode=pipeline_request.drift_mode,
+                    engine=pipeline_request.drift_engine,
+                    forcing_strategy=pipeline_request.drift_forcing_strategy,
                 )
             )
 
@@ -141,6 +143,8 @@ def _data_provenance(request: PipelineRequest) -> dict[str, str]:
         "spill_seed": "user_supplied" if request.spill_seed else "not_available",
         "currents": "copernicus_real" if request.drift_mode == "real_data" else "synthetic_dev",
         "wind": "noaa_gfs_real" if request.drift_mode == "real_data" else "synthetic_dev",
+        "drift_engine": request.drift_engine or settings.drift_engine,
+        "drift_forcing_strategy": request.drift_forcing_strategy or settings.opendrift_forcing_strategy,
         "ais": "synthetic_dev" if request.attribution_mode == "synthetic_dev" else "real_ais",
     }
 

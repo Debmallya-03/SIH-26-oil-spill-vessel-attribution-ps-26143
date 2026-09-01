@@ -19,6 +19,7 @@ class DatasetType(str, Enum):
     CLASSIFICATION = "classification"
     SEGMENTATION = "segmentation"
     SYNTHETIC_DEV = "synthetic_dev"
+    DEEP_SAR_SOS = "deep_sar_sos"
 
 
 @dataclass(frozen=True)
@@ -85,7 +86,7 @@ def list_segmentation_images(root: str | Path) -> list[Path]:
     root_path = Path(root)
     image_dir = root_path / "images"
     if image_dir.exists():
-        return sorted(path for path in image_dir.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS)
+        return sorted(path for path in image_dir.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS)
     return [
         path
         for path in list_image_files(root_path)
@@ -106,6 +107,13 @@ def list_mask_files(root: str | Path) -> list[Path]:
 
 def infer_dataset_type(root: str | Path) -> DatasetType:
     root_path = Path(root)
+    if (
+        (root_path / "images" / "train").is_dir()
+        and (root_path / "images" / "val").is_dir()
+        and (root_path / "masks" / "train").is_dir()
+        and (root_path / "masks" / "val").is_dir()
+    ):
+        return DatasetType.DEEP_SAR_SOS
     if (root_path / "images").is_dir() and (root_path / "masks").is_dir():
         return DatasetType.SEGMENTATION
     if any(root_path.glob("data/Class_*")):
@@ -120,6 +128,20 @@ def find_segmentation_pairs(root: str | Path) -> list[tuple[Path, Path]]:
         return []
 
     images = list_segmentation_images(root_path)
+    if (root_path / "images").exists() and (root_path / "masks").exists():
+        images_by_relative_stem = {
+            path.relative_to(root_path / "images").with_suffix("").as_posix(): path
+            for path in images
+        }
+        pairs = []
+        for mask_path in masks:
+            relative_stem = mask_path.relative_to(root_path / "masks").with_suffix("").as_posix()
+            image_path = images_by_relative_stem.get(relative_stem)
+            if image_path is not None:
+                pairs.append((image_path, mask_path))
+        if pairs:
+            return sorted(pairs)
+
     images_by_stem = {path.stem: path for path in images}
     pairs: list[tuple[Path, Path]] = []
     for mask_path in masks:
@@ -141,12 +163,27 @@ def align_mask_to_image_size(mask_array: np.ndarray, image_size: tuple[int, int]
     return np.asarray(Image.fromarray(mask_array).resize(image_size, Image.Resampling.NEAREST))
 
 
-def validate_segmentation_dataset(root: str | Path, allow_synthetic_alignment: bool = False) -> SegmentationValidationReport:
+def validate_segmentation_dataset(
+    root: str | Path,
+    allow_synthetic_alignment: bool = False,
+    allow_empty_masks: bool = False,
+) -> SegmentationValidationReport:
     root_path = Path(root)
     images = list_segmentation_images(root_path)
     masks = list_mask_files(root_path)
     masks_by_name = {path.name: path for path in masks}
     images_by_name = {path.name: path for path in images}
+    masks_by_relative_stem = {}
+    images_by_relative_stem = {}
+    if (root_path / "images").exists() and (root_path / "masks").exists():
+        masks_by_relative_stem = {
+            path.relative_to(root_path / "masks").with_suffix("").as_posix(): path
+            for path in masks
+        }
+        images_by_relative_stem = {
+            path.relative_to(root_path / "images").with_suffix("").as_posix(): path
+            for path in images
+        }
 
     valid_pairs: list[SegmentationPair] = []
     missing_masks: list[str] = []
@@ -157,7 +194,14 @@ def validate_segmentation_dataset(root: str | Path, allow_synthetic_alignment: b
 
     for image_path in images:
         expected_mask_name = f"{image_path.stem}_mask{image_path.suffix}"
-        mask_path = masks_by_name.get(expected_mask_name)
+        relative_stem = (
+            image_path.relative_to(root_path / "images").with_suffix("").as_posix()
+            if (root_path / "images") in image_path.parents
+            else None
+        )
+        mask_path = masks_by_relative_stem.get(relative_stem) if relative_stem else None
+        if mask_path is None:
+            mask_path = masks_by_name.get(expected_mask_name) or masks_by_name.get(image_path.name)
         if mask_path is None:
             missing_masks.append(f"{image_path.name} -> {expected_mask_name}")
             continue
@@ -204,13 +248,20 @@ def validate_segmentation_dataset(root: str | Path, allow_synthetic_alignment: b
 
         if image_size != mask_size and not allow_synthetic_alignment:
             dimension_mismatches.append(f"{image_path.name}: image={image_size}, mask={mask_size}")
-        elif effective_foreground_pixels == 0:
+        elif effective_foreground_pixels == 0 and not allow_empty_masks:
             empty_masks.append(mask_path.name)
         else:
             valid_pairs.append(pair)
 
     for mask_path in masks:
         expected_image_name = f"{mask_path.stem.removesuffix('_mask')}{mask_path.suffix}"
+        relative_stem = (
+            mask_path.relative_to(root_path / "masks").with_suffix("").as_posix()
+            if (root_path / "masks") in mask_path.parents
+            else None
+        )
+        if relative_stem and relative_stem in images_by_relative_stem:
+            continue
         if expected_image_name not in images_by_name:
             orphan_masks.append(f"{mask_path.name} -> {expected_image_name}")
 
@@ -230,7 +281,11 @@ def validate_segmentation_dataset(root: str | Path, allow_synthetic_alignment: b
 def summarize_dataset(root: str | Path) -> DatasetSummary:
     root_path = Path(root)
     dataset_type = infer_dataset_type(root_path)
-    images = list_segmentation_images(root_path) if dataset_type == DatasetType.SEGMENTATION else list_image_files(root_path)
+    images = (
+        list_segmentation_images(root_path)
+        if dataset_type in {DatasetType.SEGMENTATION, DatasetType.SYNTHETIC_DEV, DatasetType.DEEP_SAR_SOS}
+        else list_image_files(root_path)
+    )
     masks = list_mask_files(root_path)
     class_folders = {
         child.name: len([p for p in child.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS])
@@ -252,8 +307,9 @@ def summarize_dataset(root: str | Path) -> DatasetSummary:
         validate_segmentation_dataset(
             root_path,
             allow_synthetic_alignment=dataset_type == DatasetType.SYNTHETIC_DEV,
+            allow_empty_masks=dataset_type == DatasetType.DEEP_SAR_SOS,
         ).is_trainable
-        if dataset_type in {DatasetType.SEGMENTATION, DatasetType.SYNTHETIC_DEV}
+        if dataset_type in {DatasetType.SEGMENTATION, DatasetType.SYNTHETIC_DEV, DatasetType.DEEP_SAR_SOS}
         else bool(find_segmentation_pairs(root_path))
     )
 
@@ -298,6 +354,8 @@ class SARSegmentationDataset:
         image_size: int = 256,
         strict_dimensions: bool = True,
         align_mask_to_image: bool = False,
+        input_channels: int = 3,
+        mask_threshold: int = 128,
     ) -> None:
         if not pairs:
             raise ValueError("No image/mask pairs were provided.")
@@ -305,6 +363,8 @@ class SARSegmentationDataset:
         self.image_size = image_size
         self.strict_dimensions = strict_dimensions
         self.align_mask_to_image = align_mask_to_image
+        self.input_channels = input_channels
+        self.mask_threshold = mask_threshold
 
     def __len__(self) -> int:
         return len(self.pairs)
@@ -322,14 +382,14 @@ class SARSegmentationDataset:
             image_path, mask_path = pair
 
         with Image.open(image_path) as raw_image, Image.open(mask_path) as raw_mask:
-            image = raw_image.convert("RGB")
+            image = raw_image.convert("L" if self.input_channels == 1 else "RGB")
             mask = raw_mask.convert("L")
 
             if self.strict_dimensions and image.size != mask.size:
                 raise ValueError(f"Image/mask dimensions differ for {image_path.name}: image={image.size}, mask={mask.size}")
 
             image_array = resize_image(np.asarray(image), self.image_size)
-            binary_mask = (np.asarray(mask) > 0).astype(np.uint8)
+            binary_mask = (np.asarray(mask) >= self.mask_threshold).astype(np.uint8)
             if self.align_mask_to_image and image.size != mask.size:
                 binary_mask = align_mask_to_image_size(binary_mask, image.size)
             mask_array = resize_mask(binary_mask, self.image_size)

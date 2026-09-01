@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     detection_model_path: str = "backend/models/unet-baseline.pth"
     drift_environment_mode: str = "synthetic_dev"
+    drift_engine: str = "development_drift_engine"
     drift_backward_hours: int = 6
     drift_forward_hours: int = 6
     drift_particle_count: int = 100
@@ -29,6 +30,12 @@ class Settings(BaseSettings):
     drift_environment_data_path: str | None = None
     drift_current_data_path: str = "../data/ocean/currents/cmems_mod_glo_phy-cur_anfc_0.083deg_PT6H-i_1787833203663.nc"
     drift_wind_data_glob: str = "../data/ocean/wind/gfs.t06z.pgrb2.0p25.f*"
+    opendrift_backward_hours: int = 6
+    opendrift_forward_hours: int = 6
+    opendrift_particle_count: int = 100
+    opendrift_time_step_minutes: int = 60
+    opendrift_seed_radius_meters: float = 100.0
+    opendrift_forcing_strategy: str = "native_grid"
     ais_mode: str = "synthetic_dev"
     ais_data_path: str | None = None
     ais_candidate_radius_km: float = 25.0

@@ -20,6 +20,8 @@ class PipelineRequest(BaseModel):
     spill_seed: SpillSeed | None = None
     detection_mode: Literal["synthetic_dev"] | None = "synthetic_dev"
     drift_mode: Literal["synthetic_dev", "real_data"] = "real_data"
+    drift_engine: Literal["development_drift_engine", "opendrift_openoil"] | None = None
+    drift_forcing_strategy: Literal["native_grid", "constant_sample"] | None = None
     attribution_mode: Literal["synthetic_dev", "real_data"] = "synthetic_dev"
     persist: bool = True
 
@@ -80,4 +82,3 @@ class VesselCandidatesResponse(BaseModel):
     incident_id: str
     vessels: list[dict[str, object]] = Field(default_factory=list)
     message: str | None = None
-

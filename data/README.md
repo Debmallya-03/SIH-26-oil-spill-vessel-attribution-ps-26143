@@ -8,6 +8,7 @@ This directory contains local development data for SIH 2026 PS 26143. External d
 data/
 |-- README.md
 |-- kaggle/              # external / ignored
+|-- deep_sar_sos/        # external Refined Deep-SAR SOS segmentation data / ignored
 |-- synthetic_sar/       # small development smoke-test assets
 |-- ais/                 # external AIS files / ignored
 `-- ocean/
@@ -50,6 +51,38 @@ Git policy: may be committed if the team wants reproducible smoke tests. These s
 The synthetic development masks are aligned to their corresponding image dimensions using nearest-neighbour interpolation solely for software pipeline smoke testing.
 
 This alignment policy must not be applied blindly to real scientific datasets.
+
+## Refined Deep-SAR Oil Spill SOS Segmentation Dataset
+
+Purpose: real SAR oil-spill segmentation data for Module A model development and validation.
+
+Expected folder:
+
+```text
+data/deep_sar_sos/
+|-- archives/
+|   |-- images.zip
+|   `-- masks.zip
+`-- extracted/
+    |-- images/
+    |   |-- train/
+    |   `-- val/
+    `-- masks/
+        |-- train/
+        `-- val/
+```
+
+Expected files: PNG images and PNG masks. The current local archive contains author-provided `train` and `val` splits; no local `test` split was found.
+
+Git policy: do not commit. The dataset is large external data and is ignored by `.gitignore`.
+
+The local loader pairs files by matching relative paths, for example:
+
+```text
+images/train/palsar_0.png -> masks/train/palsar_0.png
+```
+
+Local validation metrics from this dataset are dataset validation metrics only. They do not prove operational real-world spill detection accuracy.
 
 ## AIS Vessel Tracks
 

@@ -7,12 +7,13 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
 
-def load_image(image_path: str | Path) -> np.ndarray:
+def load_image(image_path: str | Path, input_channels: int = 3) -> np.ndarray:
     path = resolve_image_path(image_path)
     if not path.exists():
         raise FileNotFoundError(f"Image not found: {path}")
 
-    image = Image.open(path).convert("RGB")
+    mode = "L" if input_channels == 1 else "RGB"
+    image = Image.open(path).convert(mode)
     return np.asarray(image)
 
 
@@ -61,8 +62,9 @@ def preprocess_image(
     image_path: str | Path,
     image_size: int = 256,
     apply_speckle_filter: bool = False,
+    input_channels: int = 3,
 ) -> np.ndarray:
-    image = load_image(image_path)
+    image = load_image(image_path, input_channels=input_channels)
     if apply_speckle_filter:
         image = median_speckle_filter(image)
     image = resize_image(image, image_size)
@@ -70,4 +72,6 @@ def preprocess_image(
 
 
 def to_chw_tensor_array(image: np.ndarray) -> np.ndarray:
+    if image.ndim == 2:
+        image = image[..., None]
     return np.transpose(image, (2, 0, 1)).astype(np.float32)

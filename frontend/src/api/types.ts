@@ -1,5 +1,7 @@
 export type PipelineMode = "detection_only" | "demo" | "real_validation";
 export type DataMode = "synthetic_dev" | "real_data";
+export type DriftEngine = "development_drift_engine" | "opendrift_openoil";
+export type DriftForcingStrategy = "native_grid" | "constant_sample";
 
 export interface GeoCoordinate {
   latitude: number;
@@ -37,6 +39,8 @@ export interface DetectionResponse {
   polygon?: PolygonGeometry | null;
   confidence?: number | null;
   model?: string | null;
+  model_dataset_type?: string | null;
+  image_size?: number | null;
   message?: string | null;
 }
 
@@ -121,6 +125,8 @@ export interface PipelineRequest {
   spill_seed?: SpillSeed | null;
   detection_mode?: "synthetic_dev" | null;
   drift_mode: DataMode;
+  drift_engine?: DriftEngine | null;
+  drift_forcing_strategy?: DriftForcingStrategy | null;
   attribution_mode: DataMode;
   persist: boolean;
 }
@@ -159,6 +165,13 @@ export interface HealthResponse {
   version: string;
   database?: {
     status: string;
+    message?: string | null;
+  };
+  opendrift?: {
+    status: string;
+    engine?: string | null;
+    model?: string | null;
+    version?: string | null;
     message?: string | null;
   };
 }

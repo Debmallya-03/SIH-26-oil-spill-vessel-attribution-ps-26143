@@ -177,6 +177,7 @@ DATABASE_CONNECT_TIMEOUT_SECONDS=2
 FRONTEND_ORIGIN=http://localhost:5173
 DETECTION_MODEL_PATH=models/unet-synthetic-dev.pth
 DRIFT_ENVIRONMENT_MODE=synthetic_dev
+DRIFT_ENGINE=development_drift_engine
 DRIFT_BACKWARD_HOURS=6
 DRIFT_FORWARD_HOURS=6
 DRIFT_PARTICLE_COUNT=100
@@ -184,6 +185,14 @@ DRIFT_RANDOM_SEED=42
 DRIFT_WINDAGE_FACTOR=0.03
 DRIFT_MAX_NEAREST_CURRENT_DISTANCE_KM=10.0
 DRIFT_ENVIRONMENT_DATA_PATH=
+DRIFT_CURRENT_DATA_PATH=../data/ocean/currents/cmems_mod_glo_phy-cur_anfc_0.083deg_PT6H-i_1787833203663.nc
+DRIFT_WIND_DATA_GLOB=../data/ocean/wind/gfs.t06z.pgrb2.0p25.f*
+OPENDRIFT_BACKWARD_HOURS=6
+OPENDRIFT_FORWARD_HOURS=6
+OPENDRIFT_PARTICLE_COUNT=100
+OPENDRIFT_TIME_STEP_MINUTES=60
+OPENDRIFT_SEED_RADIUS_METERS=100.0
+OPENDRIFT_FORCING_STRATEGY=native_grid
 AIS_MODE=synthetic_dev
 AIS_DATA_PATH=
 AIS_CANDIDATE_RADIUS_KM=25.0
@@ -197,6 +206,20 @@ For local synthetic development only, override:
 ```env
 DETECTION_MODEL_PATH=models/unet-synthetic-dev.pth
 ```
+
+For local Deep-SAR SOS segmentation experiments, keep the dataset under ignored `data/deep_sar_sos/` and train with:
+
+```bash
+python scripts\train_detection.py --dataset-root ..\data\deep_sar_sos\extracted --dataset-type deep_sar_sos --epochs 20 --batch-size 4 --learning-rate 0.0001 --image-size 256 --output-path models\unet-deep-sar-sos.pth
+```
+
+Then select it locally with:
+
+```env
+DETECTION_MODEL_PATH=models/unet-deep-sar-sos.pth
+```
+
+Deep-SAR SOS validation metrics are dataset validation metrics, not operational real-world accuracy.
 
 For real AIS scoring, keep raw AIS files outside Git and set either the raw compressed source:
 
@@ -219,3 +242,17 @@ python scripts\validate_real_ais.py --input ..\..\data\ais\raw\ais-2024-01-14.cs
 ```
 
 The real AIS dataset validates ingestion, trajectory reconstruction, filtering, and scoring behavior. It does not represent the Mumbai oil-spill demonstration scenario.
+
+For OpenDrift/OpenOil smoke testing, send `engine=opendrift_openoil` and choose:
+
+```text
+forcing_strategy=native_grid
+```
+
+or, for debugging only:
+
+```text
+forcing_strategy=constant_sample
+```
+
+`native_grid` attaches OpenDrift-compatible gridded readers for local Copernicus currents and NOAA GFS winds. It is still a development integration path and is not scientific validation.

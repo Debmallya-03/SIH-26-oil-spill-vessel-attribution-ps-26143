@@ -39,6 +39,8 @@ const DEMO_REQUEST: PipelineRequest = {
   spill_seed: DEMO_SEED,
   detection_mode: "synthetic_dev",
   drift_mode: "real_data",
+  drift_engine: "development_drift_engine",
+  drift_forcing_strategy: "native_grid",
   attribution_mode: "synthetic_dev",
   persist: true
 };
@@ -49,6 +51,8 @@ const EMPTY_REQUEST: PipelineRequest = {
   spill_seed: DEMO_SEED,
   detection_mode: "synthetic_dev",
   drift_mode: "real_data",
+  drift_engine: "development_drift_engine",
+  drift_forcing_strategy: "native_grid",
   attribution_mode: "synthetic_dev",
   persist: true
 };
@@ -321,6 +325,18 @@ function NewAnalysis({
               <select value={request.drift_mode} onChange={(event) => setRequest({ ...request, drift_mode: event.target.value as PipelineRequest["drift_mode"] })}>
                 <option value="real_data">real_data</option>
                 <option value="synthetic_dev">synthetic_dev</option>
+              </select>
+            </Field>
+            <Field label="Drift engine">
+              <select value={request.drift_engine ?? "development_drift_engine"} onChange={(event) => setRequest({ ...request, drift_engine: event.target.value as PipelineRequest["drift_engine"] })}>
+                <option value="development_drift_engine">development_drift_engine</option>
+                <option value="opendrift_openoil">opendrift_openoil</option>
+              </select>
+            </Field>
+            <Field label="Forcing strategy">
+              <select value={request.drift_forcing_strategy ?? "native_grid"} onChange={(event) => setRequest({ ...request, drift_forcing_strategy: event.target.value as PipelineRequest["drift_forcing_strategy"] })}>
+                <option value="native_grid">native_grid</option>
+                <option value="constant_sample">constant_sample</option>
               </select>
             </Field>
             <Field label="Attribution mode">

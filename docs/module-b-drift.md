@@ -16,11 +16,22 @@ Module B estimates synthetic development drift trajectories from an explicit geo
   "backward_hours": 6,
   "forward_hours": 6,
   "particle_count": 100,
-  "environment_mode": "synthetic_dev"
+  "environment_mode": "synthetic_dev",
+  "engine": "development_drift_engine"
 }
 ```
 
 Latitude is validated in `[-90, 90]` and longitude in `[-180, 180]`.
+
+Supported drift engines:
+
+- `development_drift_engine`: deterministic lightweight engine used by default.
+- `opendrift_openoil`: optional OpenDrift/OpenOil engine for real-data integration smoke testing.
+
+OpenOil supports two forcing strategies:
+
+- `native_grid`: OpenDrift readers query spatially and temporally varying Copernicus/GFS grids.
+- `constant_sample`: OpenDrift receives one sampled real vector through a constant reader for debugging/regression.
 
 ## GeoJSON Convention
 
@@ -147,7 +158,36 @@ Future NetCDF/GRIB integration should provide configurable variable mappings for
 
 ## OpenDrift / OpenOil
 
-OpenDrift/OpenOil remains the intended future physics engine. It is not installed in the current backend environment. A dry-run dependency check found that it would install `opendrift` plus a large geospatial stack including Cartopy, GeoPandas, NetCDF4, Copernicus Marine, and related dependencies. The development engine is isolated behind module boundaries so OpenDrift can replace it later without changing the API contract.
+OpenDrift/OpenOil is integrated as an optional Module B engine:
+
+```json
+{
+  "latitude": 18.5,
+  "longitude": 72.8333511352539,
+  "timestamp": "2026-08-26T12:00:00Z",
+  "mode": "real_data",
+  "engine": "opendrift_openoil"
+}
+```
+
+The installed package is `opendrift` and the imported oil model is `OpenOil`.
+
+The preferred OpenOil development path is `forcing_strategy=native_grid`. It uses `opendrift.readers.reader_netCDF_CF_generic.Reader` for both current and wind. Copernicus NetCDF is read directly with standard-name mapping; GFS GRIB files are loaded with `xarray/cfgrib`, combined across valid time, normalized to an in-memory CF-like dataset, and attached through the same OpenDrift reader class.
+
+The source variable mapping is:
+
+```text
+uo  -> x_sea_water_velocity
+vo  -> y_sea_water_velocity
+u10 -> x_wind
+v10 -> y_wind
+```
+
+The older `constant_sample` strategy remains available. It uses one sampled real Copernicus/GFS vector through `opendrift.readers.reader_constant.Reader`. It is useful for debugging and regression, but does not provide spatially or temporally varying forcing.
+
+If OpenDrift cannot be imported in a teammate's environment, `/drift` with `engine=opendrift_openoil` returns `opendrift_not_available`. The default `development_drift_engine` remains available.
+
+OpenDrift imports Matplotlib, so local runs set `MPLCONFIGDIR` to a repository-local ignored `.mpl-cache/` directory when needed.
 
 ## Module A Integration Limitation
 

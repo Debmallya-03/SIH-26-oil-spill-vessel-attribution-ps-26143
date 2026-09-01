@@ -15,6 +15,8 @@ class DriftRequest(BaseModel):
     particle_count: int | None = Field(default=None, ge=1, le=5000)
     environment_mode: Literal["synthetic_dev", "real_data"] | None = None
     mode: Literal["synthetic_dev", "real_data"] | None = None
+    engine: Literal["development_drift_engine", "opendrift_openoil"] | None = None
+    forcing_strategy: Literal["native_grid", "constant_sample"] | None = None
 
 
 class OriginWindow(BaseModel):
@@ -49,6 +51,15 @@ class DriftMetadata(BaseModel):
     nearest_current_substitutions: list[dict[str, object]] = Field(default_factory=list)
     max_nearest_current_distance_km: float | None = None
     max_actual_substitution_distance_km: float | None = None
+    forcing_strategy: str | None = None
+    opendrift_version: str | None = None
+    current_reader: str | None = None
+    wind_reader: str | None = None
+    forcing_coverage_status: str | None = None
+    backward_particles_deactivated: int | None = None
+    forward_particles_deactivated: int | None = None
+    backward_final_centroid: dict[str, float] | None = None
+    forward_final_centroid: dict[str, float] | None = None
 
 
 class DriftResponse(BaseModel):

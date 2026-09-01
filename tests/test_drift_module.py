@@ -17,11 +17,25 @@ from app.modules.drift.environmental import (
     RealDataEnvironmentProvider,
     haversine_distance_km,
 )
-from app.modules.drift.engine import DevelopmentDriftEngine, InsufficientParticlesError
+from app.modules.drift import service as drift_service
+from app.modules.drift.engine import DevelopmentDriftEngine, DriftSimulationResult, InsufficientParticlesError
 from app.modules.drift.geometry import move_coordinate, validate_coordinate
+from app.modules.drift.opendrift_engine import (
+    FORCING_CONSTANT_SAMPLE,
+    FORCING_NATIVE_GRID,
+    OPENDRIFT_ENGINE_NAME,
+    OPENDRIFT_VARIABLE_MAPPING,
+    OpenDriftUnavailableError,
+    _extract_openoil_run,
+    _opendrift_datetime,
+    create_native_grid_readers,
+    get_opendrift_capability,
+    query_native_reader_values,
+)
 from app.modules.drift.service import estimate_drift
 from app.modules.drift.synthetic_environment import SyntheticDevelopmentEnvironment
-from app.schemas.drift import DriftRequest
+from app.schemas.drift import DriftMetadata, DriftRequest, LineStringGeometry, OriginWindow, PolygonGeometry
+from app.schemas.detection import GeoCoordinate
 
 
 class DriftModuleTests(unittest.TestCase):
@@ -309,6 +323,224 @@ class DriftModuleTests(unittest.TestCase):
             "timestamp": "2026-08-26T12:00:00Z",
         })
         self.assertEqual(invalid.status_code, 422)
+
+    def test_opendrift_request_schema_and_capability_probe(self) -> None:
+        request = DriftRequest(
+            latitude=18.5,
+            longitude=72.8333511352539,
+            timestamp=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+            mode="real_data",
+            engine="opendrift_openoil",
+            forcing_strategy="native_grid",
+        )
+        capability = get_opendrift_capability()
+
+        self.assertEqual(request.engine, OPENDRIFT_ENGINE_NAME)
+        self.assertEqual(request.forcing_strategy, FORCING_NATIVE_GRID)
+        self.assertIn(capability["status"], {"available", "not_available"})
+        self.assertEqual(OPENDRIFT_VARIABLE_MAPPING["current_u_mps"], "x_sea_water_velocity")
+        self.assertEqual(OPENDRIFT_VARIABLE_MAPPING["wind_v_mps"], "y_wind")
+
+    def test_native_grid_reader_creation_and_known_point_values(self) -> None:
+        current_path = REPO_ROOT / "data" / "ocean" / "currents" / "cmems_mod_glo_phy-cur_anfc_0.083deg_PT6H-i_1787833203663.nc"
+        wind_files = sorted((REPO_ROOT / "data" / "ocean" / "wind").glob("gfs.t06z.pgrb2.0p25.f*"))
+        readers = create_native_grid_readers(current_path, wind_files)
+        values = query_native_reader_values(
+            current_path,
+            wind_files,
+            latitude=18.5,
+            longitude=72.8333511352539,
+            timestamp=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(readers.current_reader_class, "opendrift.readers.reader_netCDF_CF_generic.Reader")
+        self.assertEqual(readers.wind_reader_class, "opendrift.readers.reader_netCDF_CF_generic.Reader")
+        self.assertAlmostEqual(values["current_u_mps"], 0.05565712966566139)
+        self.assertAlmostEqual(values["current_v_mps"], -0.08426375145450038)
+        self.assertAlmostEqual(values["wind_u_mps"], 5.444647407552111, places=6)
+        self.assertAlmostEqual(values["wind_v_mps"], -0.15588012556281683, places=6)
+
+    def test_native_grid_reader_spatial_and_temporal_variation(self) -> None:
+        current_path = REPO_ROOT / "data" / "ocean" / "currents" / "cmems_mod_glo_phy-cur_anfc_0.083deg_PT6H-i_1787833203663.nc"
+        wind_files = sorted((REPO_ROOT / "data" / "ocean" / "wind").glob("gfs.t06z.pgrb2.0p25.f*"))
+        point_a = query_native_reader_values(
+            current_path,
+            wind_files,
+            latitude=18.5,
+            longitude=72.8333511352539,
+            timestamp=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+        )
+        point_b = query_native_reader_values(
+            current_path,
+            wind_files,
+            latitude=18.0,
+            longitude=72.5,
+            timestamp=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+        )
+        time_b = query_native_reader_values(
+            current_path,
+            wind_files,
+            latitude=18.5,
+            longitude=72.8333511352539,
+            timestamp=datetime(2026, 8, 26, 18, 0, tzinfo=UTC),
+        )
+
+        self.assertNotEqual(point_a["current_u_mps"], point_b["current_u_mps"])
+        self.assertNotEqual(point_a["wind_u_mps"], point_b["wind_u_mps"])
+        self.assertNotEqual(point_a["current_u_mps"], time_b["current_u_mps"])
+        self.assertNotEqual(point_a["wind_u_mps"], time_b["wind_u_mps"])
+
+    def test_opendrift_datetime_normalizes_utc_aware_value(self) -> None:
+        value = _opendrift_datetime(datetime(2026, 8, 26, 12, 0, tzinfo=UTC))
+
+        self.assertIsNone(value.tzinfo)
+        self.assertEqual(value.isoformat(), "2026-08-26T12:00:00")
+
+    def test_opendrift_result_extraction_excludes_inactive_particles(self) -> None:
+        class Variable:
+            def __init__(self, values) -> None:
+                self.values = values
+
+        class Result:
+            def __init__(self) -> None:
+                self.lon = Variable(np.array([[72.8, 72.9], [72.81, 72.91], [72.82, np.nan]]))
+                self.lat = Variable(np.array([[18.5, 18.6], [18.51, 18.61], [18.52, 18.62]]))
+                self.status = Variable(np.array([[0, 0], [0, 1], [0, 0]]))
+
+            def __contains__(self, key: str) -> bool:
+                return key == "status"
+
+        run = _extract_openoil_run(Result())
+
+        self.assertEqual(run.active_count, 1)
+        self.assertEqual(run.final_particles, [(18.6, 72.9)])
+        self.assertEqual(run.centroids[-1].longitude, 72.9)
+
+    def test_opendrift_service_dispatches_to_openoil_engine(self) -> None:
+        class Provider:
+            def __init__(self, *args, **kwargs) -> None:
+                self.current_path = REPO_ROOT / "data" / "ocean" / "currents" / "cmems_mod_glo_phy-cur_anfc_0.083deg_PT6H-i_1787833203663.nc"
+                self.wind_files = sorted((REPO_ROOT / "data" / "ocean" / "wind").glob("gfs.t06z.pgrb2.0p25.f*"))
+                pass
+
+            def is_ready(self) -> bool:
+                return True
+
+            def get_forcing(self, latitude, longitude, timestamp):
+                return EnvironmentalForcing(0.055, -0.084, 5.44, -0.15, {"provider": "fake"})
+
+        class Engine:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+            def simulate(self, **kwargs):
+                origin = GeoCoordinate(latitude=18.52, longitude=72.79)
+                return DriftSimulationResult(
+                    engine=OPENDRIFT_ENGINE_NAME,
+                    origin_centroid=origin,
+                    origin_area=PolygonGeometry(
+                        coordinates=[[[72.78, 18.51], [72.8, 18.51], [72.8, 18.53], [72.78, 18.51]]]
+                    ),
+                    origin_time_window=OriginWindow(
+                        start=datetime(2026, 8, 26, 5, 0, tzinfo=UTC),
+                        end=datetime(2026, 8, 26, 7, 0, tzinfo=UTC),
+                    ),
+                    backward_path=LineStringGeometry(coordinates=[[72.8333511352539, 18.5], [72.79, 18.52]]),
+                    forward_path=LineStringGeometry(coordinates=[[72.8333511352539, 18.5], [72.86, 18.48]]),
+                    metadata=DriftMetadata(
+                        backward_hours=6,
+                        forward_hours=6,
+                        particle_count=100,
+                        time_step_minutes=60,
+                        windage_factor=0.0,
+                        forcing_strategy=FORCING_NATIVE_GRID,
+                    ),
+                )
+
+        previous_provider = drift_service.RealDataEnvironmentProvider
+        previous_engine = drift_service.OpenDriftOpenOilEngine
+        drift_service.RealDataEnvironmentProvider = Provider
+        drift_service.OpenDriftOpenOilEngine = Engine
+        try:
+            response = drift_service.estimate_drift(
+                DriftRequest(
+                    latitude=18.5,
+                    longitude=72.8333511352539,
+                    timestamp=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+                    mode="real_data",
+                    engine="opendrift_openoil",
+                )
+            )
+        finally:
+            drift_service.RealDataEnvironmentProvider = previous_provider
+            drift_service.OpenDriftOpenOilEngine = previous_engine
+
+        self.assertEqual(response.status, "success")
+        self.assertEqual(response.engine, OPENDRIFT_ENGINE_NAME)
+        self.assertEqual(response.environmental_forcing["current_u_mps"], 0.055)
+        self.assertIn("OpenDrift/OpenOil engine", response.message)
+        self.assertEqual(response.metadata.forcing_strategy, FORCING_NATIVE_GRID)
+
+    def test_opendrift_constant_sample_regression(self) -> None:
+        response = estimate_drift(
+            DriftRequest(
+                latitude=18.5,
+                longitude=72.8333511352539,
+                timestamp=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+                mode="real_data",
+                engine="opendrift_openoil",
+                forcing_strategy=FORCING_CONSTANT_SAMPLE,
+                backward_hours=1,
+                forward_hours=1,
+                particle_count=5,
+            )
+        )
+
+        self.assertEqual(response.status, "success")
+        self.assertEqual(response.engine, OPENDRIFT_ENGINE_NAME)
+        self.assertEqual(response.metadata.forcing_strategy, FORCING_CONSTANT_SAMPLE)
+
+    def test_opendrift_service_returns_explicit_unavailable_status(self) -> None:
+        class Provider:
+            def __init__(self, *args, **kwargs) -> None:
+                self.current_path = None
+                self.wind_files = []
+                pass
+
+            def is_ready(self) -> bool:
+                return True
+
+            def get_forcing(self, latitude, longitude, timestamp):
+                return EnvironmentalForcing(0.055, -0.084, 5.44, -0.15)
+
+        class Engine:
+            def __init__(self, **kwargs) -> None:
+                pass
+
+            def simulate(self, **kwargs):
+                raise OpenDriftUnavailableError("OpenDrift import failed")
+
+        previous_provider = drift_service.RealDataEnvironmentProvider
+        previous_engine = drift_service.OpenDriftOpenOilEngine
+        drift_service.RealDataEnvironmentProvider = Provider
+        drift_service.OpenDriftOpenOilEngine = Engine
+        try:
+            response = drift_service.estimate_drift(
+                DriftRequest(
+                    latitude=18.5,
+                    longitude=72.8333511352539,
+                    timestamp=datetime(2026, 8, 26, 12, 0, tzinfo=UTC),
+                    mode="real_data",
+                    engine="opendrift_openoil",
+                )
+            )
+        finally:
+            drift_service.RealDataEnvironmentProvider = previous_provider
+            drift_service.OpenDriftOpenOilEngine = previous_engine
+
+        self.assertEqual(response.status, "opendrift_not_available")
+        self.assertEqual(response.engine, OPENDRIFT_ENGINE_NAME)
+        self.assertIn("OpenDrift import failed", response.message)
 
 
 if __name__ == "__main__":

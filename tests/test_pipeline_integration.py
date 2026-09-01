@@ -143,6 +143,8 @@ class PipelineIntegrationTests(unittest.TestCase):
                     image_path="data/synthetic_sar/images/sar_001.png",
                     spill_seed=SpillSeed(latitude=18.5, longitude=72.8333511352539, timestamp=DEMO_TIME),
                     drift_mode="real_data",
+                    drift_engine="opendrift_openoil",
+                    drift_forcing_strategy="native_grid",
                     attribution_mode="synthetic_dev",
                     persist=True,
                 )
@@ -156,6 +158,8 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(result.summary.candidate_vessels, 1)
         self.assertEqual(result.summary.top_candidate.mmsi, "419000001")
         self.assertEqual(result.data_provenance["spill_seed"], "user_supplied")
+        self.assertEqual(result.data_provenance["drift_engine"], "opendrift_openoil")
+        self.assertEqual(result.data_provenance["drift_forcing_strategy"], "native_grid")
         self.assertGreater(result.timings_ms["total"], 0)
 
     def test_pipeline_never_converts_image_centroid_to_geographic_coordinates(self) -> None:

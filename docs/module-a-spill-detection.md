@@ -80,6 +80,8 @@ The module can:
 
 Current Kaggle status: no image/mask pairs are available. Synthetic development pairs are handled separately and are not mixed with Kaggle classification data.
 
+The loader also supports `dataset_type=deep_sar_sos` for the Refined Deep-SAR Oil Spill SOS segmentation dataset when it is extracted locally under `data/deep_sar_sos/extracted`. That dataset uses author-provided `train` and `val` folders and is not mixed with the synthetic development data.
+
 ## Model Architecture
 
 Implemented in:
@@ -110,16 +112,26 @@ cd backend
 python scripts\train_detection.py --dataset-root ..\data\synthetic_sar --dataset-type synthetic_dev --epochs 20 --batch-size 2 --learning-rate 0.0001 --image-size 128 --output-path models\unet-synthetic-dev.pth
 ```
 
+Deep-SAR SOS smoke/full training uses the real segmentation dataset path:
+
+```bash
+cd backend
+python scripts\train_detection.py --dataset-root ..\data\deep_sar_sos\extracted --dataset-type deep_sar_sos --epochs 20 --batch-size 4 --learning-rate 0.0001 --image-size 256 --output-path models\unet-deep-sar-sos.pth
+```
+
 With the current Kaggle classification-only dataset, the script prints a clear message and skips training. With `dataset_type=segmentation`, mismatched source image/mask dimensions are rejected. With `dataset_type=synthetic_dev`, masks may be aligned to image dimensions using nearest-neighbour interpolation for smoke testing only.
 
-- `BCEWithLogitsLoss`
+- `BCEWithLogitsLoss + Dice loss`
 - validation loss
 - Dice score
 - IoU score
+- precision
+- recall
+- F1
 - CUDA when available, CPU otherwise
 - best-checkpoint saving
 
-All metrics emitted from synthetic data are labelled `SYNTHETIC DEVELOPMENT METRICS`.
+Metrics emitted from synthetic data are labelled `SYNTHETIC DEVELOPMENT METRICS`. Metrics emitted from Deep-SAR SOS are labelled `DEEP-SAR SOS VALIDATION METRICS` and should not be described as operational real-world accuracy.
 
 ## Checkpoint Location
 
@@ -139,6 +151,42 @@ backend/models/*
 ```
 
 Large model artifacts should not be committed.
+
+## Refined Deep-SAR Oil Spill SOS Dataset
+
+Local expected structure:
+
+```text
+data/deep_sar_sos/
+|-- archives/
+|   |-- images.zip
+|   `-- masks.zip
+`-- extracted/
+    |-- images/
+    |   |-- train/
+    |   `-- val/
+    `-- masks/
+        |-- train/
+        `-- val/
+```
+
+Observed local extraction:
+
+- images: `8070`
+- masks: `8070`
+- train pairs: `6455`
+- validation pairs: `1615`
+- test split: not present locally
+- image size: `256 x 256`
+- image channels: RGB
+- image dtype/range: `uint8`, `0..255`
+- missing image/mask pairs: `0`
+- mismatched dimensions: `0`
+- corrupted samples: `0`
+
+Masks are RGB or grayscale PNGs. After grayscale conversion, the full scan found values from `0` through `255`; most pixels are exactly `0` or `255`, with intermediate values forming a small minority. For binary segmentation training, `deep_sar_sos` uses the explicit threshold `mask >= 128` as `oil_spill_candidate`. This class interpretation should be checked against the original dataset documentation before scientific claims.
+
+Empty masks are valid background/no-spill samples for this real segmentation dataset.
 
 ## Synthetic Development Dataset
 

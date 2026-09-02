@@ -138,8 +138,12 @@ def _scenario_name(request: PipelineRequest) -> str:
 def _data_provenance(request: PipelineRequest) -> dict[str, str]:
     return {
         "pipeline_mode": request.pipeline_mode,
-        "sar": "synthetic" if request.detection_mode == "synthetic_dev" else "unknown",
-        "detection_model": "synthetic_development_checkpoint" if request.detection_mode == "synthetic_dev" else "configured_checkpoint",
+        "sar": "synthetic" if request.detection_mode == "synthetic_dev" else "deep_sar_sos",
+        "detection_model": (
+            "synthetic_development_checkpoint"
+            if request.detection_mode == "synthetic_dev"
+            else "deep_sar_sos_checkpoint"
+        ),
         "spill_seed": "user_supplied" if request.spill_seed else "not_available",
         "currents": "copernicus_real" if request.drift_mode == "real_data" else "synthetic_dev",
         "wind": "noaa_gfs_real" if request.drift_mode == "real_data" else "synthetic_dev",

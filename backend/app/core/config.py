@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     database_password: str | None = None
     database_connect_timeout_seconds: int = 2
     frontend_origin: str = "http://localhost:5173"
-    detection_model_path: str = "backend/models/unet-baseline.pth"
+    detection_model_path: str = "models/unet-deep-sar-sos.pth"
     drift_environment_mode: str = "synthetic_dev"
     drift_engine: str = "development_drift_engine"
     drift_backward_hours: int = 6

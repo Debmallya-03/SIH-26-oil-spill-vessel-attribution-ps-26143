@@ -55,7 +55,7 @@ Example detection request:
 }
 ```
 
-If `backend/models/unet-baseline.pth` is missing, `/detect` returns `model_not_ready` instead of pretending an untrained model is detecting spills.
+The preferred local detection checkpoint is `backend/models/unet-deep-sar-sos.pth`. If the configured checkpoint is missing, `/detect` returns `model_not_ready` instead of pretending an untrained model is detecting spills.
 
 ## Module A Detection
 
@@ -80,6 +80,14 @@ python scripts\train_detection.py --dataset-root ..\data\synthetic_sar --dataset
 ```
 
 The synthetic checkpoint name intentionally includes `synthetic` and `dev`. It is only for software pipeline validation and must not be presented as real Sentinel-1 model performance.
+
+Deep-SAR SOS trained checkpoint:
+
+```text
+backend/models/unet-deep-sar-sos.pth
+```
+
+This is the preferred production/demo checkpoint for Module A in local development. It remains ignored by Git because model artifacts should not be committed.
 
 ## Module B Drift
 
@@ -175,7 +183,7 @@ DATABASE_USER=oilspill_user
 DATABASE_PASSWORD=change_me_for_local_dev
 DATABASE_CONNECT_TIMEOUT_SECONDS=2
 FRONTEND_ORIGIN=http://localhost:5173
-DETECTION_MODEL_PATH=models/unet-synthetic-dev.pth
+DETECTION_MODEL_PATH=models/unet-deep-sar-sos.pth
 DRIFT_ENVIRONMENT_MODE=synthetic_dev
 DRIFT_ENGINE=development_drift_engine
 DRIFT_BACKWARD_HOURS=6

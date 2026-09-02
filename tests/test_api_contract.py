@@ -35,7 +35,12 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(self.client.post("/pipeline").status_code, 200)
 
     def test_detect_reports_model_not_ready_without_checkpoint(self) -> None:
-        response = self.client.post("/detect", json={"image_path": "data/kaggle/data/Class_1/class_1_00001.jpg"})
+        previous_model_path = settings.detection_model_path
+        try:
+            settings.detection_model_path = "models/does-not-exist.pth"
+            response = self.client.post("/detect", json={"image_path": "data/kaggle/data/Class_1/class_1_00001.jpg"})
+        finally:
+            settings.detection_model_path = previous_model_path
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()

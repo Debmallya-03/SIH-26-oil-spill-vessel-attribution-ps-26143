@@ -18,7 +18,7 @@ class PipelineRequest(BaseModel):
     pipeline_mode: Literal["detection_only", "demo", "real_validation"] = "detection_only"
     image_path: str | None = None
     spill_seed: SpillSeed | None = None
-    detection_mode: Literal["synthetic_dev"] | None = "synthetic_dev"
+    detection_mode: Literal["deep_sar_sos", "synthetic_dev"] | None = "deep_sar_sos"
     drift_mode: Literal["synthetic_dev", "real_data"] = "real_data"
     drift_engine: Literal["development_drift_engine", "opendrift_openoil"] | None = None
     drift_forcing_strategy: Literal["native_grid", "constant_sample"] | None = None

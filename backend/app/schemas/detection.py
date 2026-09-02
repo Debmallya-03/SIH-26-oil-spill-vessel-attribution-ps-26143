@@ -34,6 +34,7 @@ class DetectionResponse(BaseModel):
     polygon: PolygonGeometry | None = None
     confidence: float | None = None
     model: str | None = None
+    model_checkpoint: str | None = None
     model_dataset_type: str | None = None
     image_size: int | None = None
     message: str | None = None

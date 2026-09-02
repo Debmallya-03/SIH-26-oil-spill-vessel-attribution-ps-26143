@@ -110,15 +110,39 @@ Empty masks exist and are treated as valid background/no-spill segmentation samp
 Tiny smoke-training command:
 
 ```powershell
-cd C:\SIH\backend
+cd backend
 python scripts\train_detection.py --dataset-root ..\data\deep_sar_sos\extracted --dataset-type deep_sar_sos --epochs 1 --batch-size 2 --image-size 128 --learning-rate 0.0001 --output-path models\unet-deep-sar-sos-smoke.pth --max-train-samples 8 --max-val-samples 4
 ```
 
 Recommended full-training command:
 
 ```powershell
-cd C:\SIH\backend
+cd backend
 python scripts\train_detection.py --dataset-root ..\data\deep_sar_sos\extracted --dataset-type deep_sar_sos --epochs 20 --batch-size 4 --image-size 256 --learning-rate 0.0001 --output-path models\unet-deep-sar-sos.pth
+```
+
+The full checkpoint copied from Colab is now the preferred local production/demo checkpoint:
+
+```text
+backend/models/unet-deep-sar-sos.pth
+```
+
+Observed checkpoint metadata:
+
+```text
+architecture: small_unet
+input_channels: 3
+output_classes: 1
+image_size: 256
+dataset_type: deep_sar_sos
+mask_threshold: 128
+epoch: 17
+val_loss: 0.6857113065105853
+val_dice: 0.8047504318822728
+val_iou: 0.6785275325326636
+val_precision: 0.7755009290015343
+val_recall: 0.8497777191719206
+val_f1: 0.8047505510915623
 ```
 
 Training uses:

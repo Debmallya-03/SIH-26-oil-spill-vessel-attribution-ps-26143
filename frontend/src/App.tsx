@@ -35,11 +35,11 @@ const DEMO_SEED = {
 
 const DEMO_REQUEST: PipelineRequest = {
   pipeline_mode: "demo",
-  image_path: "../data/synthetic_sar/images/sar_001.png",
+  image_path: "../data/deep_sar_sos/extracted/images/val/palsar_0.png",
   spill_seed: DEMO_SEED,
-  detection_mode: "synthetic_dev",
+  detection_mode: "deep_sar_sos",
   drift_mode: "real_data",
-  drift_engine: "development_drift_engine",
+  drift_engine: "opendrift_openoil",
   drift_forcing_strategy: "native_grid",
   attribution_mode: "synthetic_dev",
   persist: true
@@ -49,9 +49,9 @@ const EMPTY_REQUEST: PipelineRequest = {
   pipeline_mode: "demo",
   image_path: "",
   spill_seed: DEMO_SEED,
-  detection_mode: "synthetic_dev",
+  detection_mode: "deep_sar_sos",
   drift_mode: "real_data",
-  drift_engine: "development_drift_engine",
+  drift_engine: "opendrift_openoil",
   drift_forcing_strategy: "native_grid",
   attribution_mode: "synthetic_dev",
   persist: true
@@ -319,6 +319,12 @@ function NewAnalysis({
                 <option value="demo">demo</option>
                 <option value="detection_only">detection_only</option>
                 <option value="real_validation">real_validation</option>
+              </select>
+            </Field>
+            <Field label="Detection model">
+              <select value={request.detection_mode ?? "deep_sar_sos"} onChange={(event) => setRequest({ ...request, detection_mode: event.target.value as PipelineRequest["detection_mode"] })}>
+                <option value="deep_sar_sos">deep_sar_sos</option>
+                <option value="synthetic_dev">synthetic_dev</option>
               </select>
             </Field>
             <Field label="Drift mode">

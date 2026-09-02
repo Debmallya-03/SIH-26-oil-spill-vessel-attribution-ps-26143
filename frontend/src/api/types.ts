@@ -39,6 +39,7 @@ export interface DetectionResponse {
   polygon?: PolygonGeometry | null;
   confidence?: number | null;
   model?: string | null;
+  model_checkpoint?: string | null;
   model_dataset_type?: string | null;
   image_size?: number | null;
   message?: string | null;
@@ -123,7 +124,7 @@ export interface PipelineRequest {
   pipeline_mode: PipelineMode;
   image_path?: string | null;
   spill_seed?: SpillSeed | null;
-  detection_mode?: "synthetic_dev" | null;
+  detection_mode?: "deep_sar_sos" | "synthetic_dev" | null;
   drift_mode: DataMode;
   drift_engine?: DriftEngine | null;
   drift_forcing_strategy?: DriftForcingStrategy | null;

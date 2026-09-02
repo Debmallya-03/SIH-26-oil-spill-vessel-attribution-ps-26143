@@ -19,6 +19,7 @@ class PredictionResult:
     confidence: float | None
     model_name: str
     message: str | None = None
+    checkpoint_path: str | None = None
     dataset_type: str | None = None
     image_size: int | None = None
 
@@ -64,6 +65,7 @@ def predict_spill(
             confidence=None,
             model_name=checkpoint_model_name(checkpoint),
             message=f"Detection model checkpoint not found: {checkpoint}",
+            checkpoint_path=_display_checkpoint_path(checkpoint),
         )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -92,6 +94,18 @@ def predict_spill(
         mask=mask,
         confidence=confidence,
         model_name=model_name,
+        checkpoint_path=_display_checkpoint_path(checkpoint),
         dataset_type=metadata.get("dataset_type"),
         image_size=checkpoint_image_size,
     )
+
+
+def _display_checkpoint_path(checkpoint: Path) -> str:
+    resolved = checkpoint.resolve()
+    try:
+        return str(resolved.relative_to(BACKEND_ROOT))
+    except ValueError:
+        try:
+            return str(resolved.relative_to(REPO_ROOT))
+        except ValueError:
+            return checkpoint.name

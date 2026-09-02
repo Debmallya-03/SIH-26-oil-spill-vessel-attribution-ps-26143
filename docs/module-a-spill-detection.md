@@ -152,6 +152,14 @@ backend/models/*
 
 Large model artifacts should not be committed.
 
+The preferred local production/demo checkpoint is:
+
+```text
+backend/models/unet-deep-sar-sos.pth
+```
+
+It is trained on the Refined Deep-SAR Oil Spill SOS dataset and selected by default through `DETECTION_MODEL_PATH=models/unet-deep-sar-sos.pth`.
+
 ## Refined Deep-SAR Oil Spill SOS Dataset
 
 Local expected structure:

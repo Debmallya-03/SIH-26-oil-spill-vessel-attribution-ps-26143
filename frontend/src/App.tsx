@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type CSSProperties, type SVGProps } from "react";
 import { API_BASE_URL, ApiError } from "./api/client";
 import { getHealth } from "./api/health";
 import { getIncident, getIncidentVessels, listIncidents } from "./api/incidents";
@@ -9,9 +9,23 @@ import type {
   IncidentSummary,
   PipelineRequest,
   PipelineResponse,
-  VesselScore
+  VesselScore,
+  VesselScoreFactors
 } from "./api/types";
 import { FactorBars } from "./components/FactorBars";
+import {
+  IconAlertTriangle,
+  IconArchive,
+  IconBolt,
+  IconCheck,
+  IconCloud,
+  IconDatabase,
+  IconRadar,
+  IconShip,
+  IconSignal,
+  IconWaves,
+  NAV_ICONS
+} from "./components/Icons";
 import { MaritimeMap } from "./components/MaritimeMap";
 import { StatusPill } from "./components/StatusPill";
 
@@ -69,6 +83,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [incidentFilter, setIncidentFilter] = useState("");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     refreshSystem();
@@ -89,6 +104,7 @@ function App() {
       if (incidentResponse.status === "success") {
         setIncidents(incidentResponse.incidents);
       }
+      setLastUpdated(new Date());
     } catch (apiError) {
       setError(formatApiError(apiError));
     }
@@ -142,12 +158,17 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <div className="brand-row">
-            <span className="brand-mark">MARIS</span>
-            <span className="brand-subtitle">AI Marine Spill Intelligence</span>
+        <div className="brand-row">
+          <span className="brand-icon">
+            <IconRadar width={20} height={20} />
+          </span>
+          <div className="brand-text">
+            <div className="brand-mark">
+              MARIS
+              <span className="brand-subtitle">AI Marine Spill Intelligence</span>
+            </div>
+            <p>Visual investigation dashboard</p>
           </div>
-          <p>PS 26143 visual investigation dashboard</p>
         </div>
         <div className="topbar-status">
           <StatusPill label={`API ${health?.status ?? "checking"}`} tone={health?.status === "healthy" ? "ok" : "warn"} />
@@ -158,15 +179,24 @@ function App() {
 
       <div className="layout">
         <aside className="sidebar">
-          {NAV.map(([key, label]) => (
-            <button key={key} className={page === key ? "nav-active" : ""} onClick={() => setPage(key)}>
-              {label}
+          <div className="sidebar-rail">
+            {NAV.map(([key, label]) => {
+              const NavIcon = NAV_ICONS[key];
+              return (
+                <button key={key} className={page === key ? "nav-active" : ""} onClick={() => setPage(key)}>
+                  <NavIcon />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+            <button className="demo-button" onClick={loadDemoScenario}>
+              <IconBolt />
+              <span>Load Demo Scenario</span>
             </button>
-          ))}
-          <button className="demo-button" onClick={loadDemoScenario}>Load Demo Scenario</button>
-          <div className="api-box">
-            <span>Backend</span>
-            <code>{API_BASE_URL}</code>
+            <div className="api-box">
+              <span>Backend</span>
+              <code>{API_BASE_URL}</code>
+            </div>
           </div>
         </aside>
 
@@ -175,11 +205,16 @@ function App() {
           {page === "overview" && (
             <Overview
               health={health}
-              incidentCount={incidents.length}
+              incidents={incidents}
               completedCount={completedCount}
               latest={incidents[0]}
               result={activeResult}
+              seed={pipelineRequest.spill_seed}
+              lastUpdated={lastUpdated}
               onRefresh={refreshSystem}
+              onNavigate={setPage}
+              onOpenIncident={openIncident}
+              onDemo={loadDemoScenario}
             />
           )}
           {page === "analysis" && (
@@ -211,7 +246,14 @@ function App() {
             />
           )}
           {page === "vessels" && (
-            <VesselIntelligence candidates={candidates} selected={selectedVessel} setSelected={setSelectedVessel} />
+            <VesselIntelligence
+              candidates={candidates}
+              selected={selectedVessel}
+              setSelected={setSelectedVessel}
+              incidents={incidents}
+              lastUpdated={lastUpdated}
+              onRefresh={refreshSystem}
+            />
           )}
           {page === "status" && <SystemStatus health={health} result={activeResult} onRefresh={refreshSystem} />}
         </main>
@@ -222,41 +264,97 @@ function App() {
 
 function Overview({
   health,
-  incidentCount,
+  incidents,
   completedCount,
   latest,
   result,
-  onRefresh
+  seed,
+  lastUpdated,
+  onRefresh,
+  onNavigate,
+  onOpenIncident,
+  onDemo
 }: {
   health: HealthResponse | null;
-  incidentCount: number;
+  incidents: IncidentSummary[];
   completedCount: number;
   latest?: IncidentSummary;
   result: PipelineResponse | null;
+  seed?: { latitude: number; longitude: number } | null;
+  lastUpdated: Date | null;
   onRefresh: () => void;
+  onNavigate: (page: Page) => void;
+  onOpenIncident: (incidentId: string) => void;
+  onDemo: () => void;
 }) {
+  const components = [
+    {
+      label: "SAR Detection",
+      value: result?.detection?.status ?? "available via /detect",
+      provenance: "Synthetic development checkpoint when demo pipeline is used",
+      icon: IconRadar
+    },
+    {
+      label: "Ocean Drift Engine",
+      value: result?.drift?.engine ?? "development_drift_engine",
+      provenance: "Copernicus Marine + NOAA GFS in real_data mode",
+      icon: IconWaves
+    },
+    {
+      label: "AIS Attribution",
+      value: result?.attribution?.status ?? "available via /score",
+      provenance: result?.data_provenance?.ais ?? "synthetic_dev or real_ais",
+      icon: IconSignal
+    },
+    {
+      label: "PostGIS Integration",
+      value: health?.database?.status ?? "unknown",
+      provenance: "Optional Day-5 persistence",
+      icon: IconDatabase
+    }
+  ];
+  const hasMapData = Boolean(seed || result?.drift?.origin_centroid || result?.drift?.backward_path?.coordinates?.length || result?.drift?.forward_path?.coordinates?.length);
+  const dbConnected = health?.database?.status === "connected";
+
   return (
-    <section className="page-grid">
+    <section className="dash-grid">
       <div className="section-heading">
         <div>
           <h1>Maritime Intelligence Overview</h1>
           <p>Backend-derived operational view for the current SIH development system.</p>
         </div>
-        <button className="secondary-button" onClick={onRefresh}>Refresh</button>
+        <div className="dash-header-actions">
+          <span className="dash-updated">{lastUpdated ? `Last updated ${formatDate(lastUpdated.toISOString())}` : "Not refreshed yet"}</span>
+          <button className="secondary-button" onClick={onRefresh}>Refresh</button>
+        </div>
       </div>
-      <div className="metric-grid">
-        <Metric label="Stored Incidents" value={incidentCount} />
-        <Metric label="Completed Investigations" value={completedCount} />
-        <Metric label="Backend API" value={health?.status ?? "checking"} />
-        <Metric label="PostGIS" value={health?.database?.status ?? "unknown"} />
+
+      <div className="dash-metric-grid">
+        <DashMetric icon={IconArchive} tone="cyan" label="Stored Incidents" value={incidents.length} hint="Total incidents stored" />
+        <DashMetric icon={IconCheck} tone="teal" label="Completed Investigations" value={completedCount} hint="Investigations completed" />
+        <DashMetric icon={IconCloud} tone="blue" label="Backend API" value={health?.status ?? "checking"} hint="API status" />
+        <DashMetric icon={IconDatabase} tone="amber" label="PostGIS Status" value={health?.database?.status ?? "unknown"} hint="Spatial DB status" />
       </div>
-      <div className="two-column">
+
+      <div className="dash-main-grid">
         <Panel title="System Components">
-          <ComponentStatus label="SAR Detection" value={result?.detection?.status ?? "available via /detect"} provenance="Synthetic development checkpoint when demo pipeline is used" />
-          <ComponentStatus label="Ocean Drift Engine" value={result?.drift?.engine ?? "development_drift_engine"} provenance="Copernicus Marine + NOAA GFS in real_data mode" />
-          <ComponentStatus label="AIS Attribution" value={result?.attribution?.status ?? "available via /score"} provenance={result?.data_provenance?.ais ?? "synthetic_dev or real_ais"} />
-          <ComponentStatus label="PostGIS" value={health?.database?.status ?? "unknown"} provenance="Optional Day-5 persistence" />
+          {components.map((item) => (
+            <ComponentStatus key={item.label} label={item.label} value={item.value} provenance={item.provenance} icon={item.icon} />
+          ))}
         </Panel>
+
+        <section className="panel dash-aoi-panel">
+          <div className="dash-aoi-header">
+            <h2>Area of Interest</h2>
+            {hasMapData && <StatusPill label="Live" tone="ok" />}
+          </div>
+          {hasMapData ? (
+            <MaritimeMap result={result} seed={seed} compact />
+          ) : (
+            <EmptyState title="No active geometry" text="Run an investigation to plot the spill seed and drift paths." />
+          )}
+        </section>
+
         <Panel title="Latest Analysis">
           {latest ? (
             <div className="detail-list">
@@ -268,9 +366,227 @@ function Overview({
           ) : (
             <EmptyState title="No stored incidents" text="Run a persisted demo pipeline after PostGIS is available." />
           )}
+          <button className="primary-button dash-cta" onClick={onDemo}>
+            <IconBolt />
+            Run Demo Pipeline
+          </button>
+        </Panel>
+      </div>
+
+      <div className="dash-secondary-grid">
+        <Panel title="Incidents Over Time">
+          <IncidentsChart incidents={incidents} dbConnected={dbConnected} onRunDemo={onDemo} />
+        </Panel>
+        <Panel title="Component Health">
+          <ComponentHealthDonut items={components} />
+        </Panel>
+        <Panel title="Recent Incidents">
+          <RecentIncidents incidents={incidents} dbConnected={dbConnected} onOpen={onOpenIncident} onViewAll={() => onNavigate("incidents")} onRunDemo={onDemo} />
         </Panel>
       </div>
     </section>
+  );
+}
+
+function DashMetric({
+  icon: Icon,
+  tone,
+  label,
+  value,
+  hint
+}: {
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  tone: "cyan" | "teal" | "blue" | "amber";
+  label: string;
+  value: string | number;
+  hint: string;
+}) {
+  return (
+    <div className={`dash-metric tone-${tone}`}>
+      <div className="dash-icon-badge">
+        <Icon width={20} height={20} />
+      </div>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{hint}</small>
+      </div>
+    </div>
+  );
+}
+
+function categorizeStatus(value: string): "available" | "development" | "unknown" {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("available") || normalized.includes("success") || normalized.includes("connected")) {
+    return "available";
+  }
+  if (normalized.includes("development") || normalized.includes("dev")) {
+    return "development";
+  }
+  return "unknown";
+}
+
+const DONUT_COLORS: Record<"available" | "development" | "unknown", string> = {
+  available: "#2dd4bf",
+  development: "#38bdf8",
+  unknown: "#f59e0b"
+};
+
+function ComponentHealthDonut({ items }: { items: Array<{ label: string; value: string }> }) {
+  const counts = { available: 0, development: 0, unknown: 0 };
+  items.forEach((item) => {
+    counts[categorizeStatus(item.value)] += 1;
+  });
+  const total = items.length;
+  const segments = (["available", "development", "unknown"] as const).map((key) => ({
+    key,
+    label: key === "available" ? "Available" : key === "development" ? "Development" : "Unknown",
+    count: counts[key],
+    color: DONUT_COLORS[key]
+  }));
+  let cursor = 0;
+  const stops = segments
+    .filter((segment) => segment.count > 0)
+    .map((segment) => {
+      const start = (cursor / total) * 360;
+      cursor += segment.count;
+      const end = (cursor / total) * 360;
+      return `${segment.color} ${start}deg ${end}deg`;
+    })
+    .join(", ");
+
+  return (
+    <div className="donut-widget">
+      <div className="donut-ring" style={{ background: total ? `conic-gradient(${stops})` : "rgba(148, 163, 184, 0.16)" }}>
+        <div className="donut-center">
+          <strong>{total}</strong>
+          <span>Total</span>
+        </div>
+      </div>
+      <ul className="donut-legend">
+        {segments.map((segment) => (
+          <li key={segment.key}>
+            <span className="legend-dot" style={{ background: segment.color }} />
+            {segment.label}
+            <b>{segment.count}</b>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function IncidentsChart({
+  incidents,
+  dbConnected,
+  onRunDemo
+}: {
+  incidents: IncidentSummary[];
+  dbConnected: boolean;
+  onRunDemo: () => void;
+}) {
+  const buckets = buildDailyBuckets(incidents);
+  if (!buckets.length) {
+    if (!dbConnected) {
+      return (
+        <EmptyState
+          title="Database not connected"
+          text="PostGIS persistence is unavailable, so incident history can't be recorded yet. Check System Status for setup details."
+        />
+      );
+    }
+    return (
+      <div className="empty-state-cta">
+        <EmptyState title="No incident history yet" text="Persisted incidents will appear here as a daily trend." />
+        <button className="secondary-button" onClick={onRunDemo}>
+          <IconBolt />
+          Run Demo Pipeline
+        </button>
+      </div>
+    );
+  }
+  const max = Math.max(...buckets.map((bucket) => bucket.count), 1);
+  return (
+    <div className="trend-chart">
+      {buckets.map((bucket) => (
+        <div className="trend-bar" key={bucket.key}>
+          <span className="trend-bar-count">{bucket.count}</span>
+          <div className="trend-bar-track">
+            <div className="trend-bar-fill" style={{ height: `${Math.max(6, (bucket.count / max) * 100)}%` }} />
+          </div>
+          <small>{bucket.label}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildDailyBuckets(incidents: IncidentSummary[]) {
+  const counts = new Map<string, number>();
+  incidents.forEach((incident) => {
+    if (!incident.created_at) {
+      return;
+    }
+    const day = incident.created_at.slice(0, 10);
+    counts.set(day, (counts.get(day) ?? 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-7)
+    .map(([key, count]) => ({
+      key,
+      count,
+      label: new Date(key).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    }));
+}
+
+function RecentIncidents({
+  incidents,
+  dbConnected,
+  onOpen,
+  onViewAll,
+  onRunDemo
+}: {
+  incidents: IncidentSummary[];
+  dbConnected: boolean;
+  onOpen: (incidentId: string) => void;
+  onViewAll: () => void;
+  onRunDemo: () => void;
+}) {
+  const recent = incidents.slice(0, 5);
+  if (!recent.length) {
+    if (!dbConnected) {
+      return (
+        <EmptyState
+          title="Database not connected"
+          text="PostGIS persistence is unavailable, so incidents can't be recorded yet. Check System Status for setup details."
+        />
+      );
+    }
+    return (
+      <div className="empty-state-cta">
+        <EmptyState title="No recent incidents" text="Persisted incidents will show up here." />
+        <button className="secondary-button" onClick={onRunDemo}>
+          <IconBolt />
+          Run Demo Pipeline
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="recent-list">
+      {recent.map((incident) => (
+        <button key={incident.incident_id} className="recent-row" onClick={() => onOpen(incident.incident_id)}>
+          <span className={`recent-dot ${incident.status === "completed" ? "status-ok" : "status-warn"}`} />
+          <div>
+            <strong>{incident.scenario ?? incident.incident_id}</strong>
+            <span>{formatDate(incident.created_at)}</span>
+          </div>
+          <StatusPill label={incident.status ?? "unknown"} tone={incident.status === "completed" ? "ok" : "warn"} />
+        </button>
+      ))}
+      <button className="text-link" onClick={onViewAll}>View all incidents →</button>
+    </div>
   );
 }
 
@@ -356,7 +672,10 @@ function NewAnalysis({
               Persist to PostGIS
             </label>
           </div>
-          <button className="primary-button" onClick={onSubmit} disabled={loading}>{loading ? "Running Investigation" : "Run Investigation"}</button>
+          <button className="primary-button" onClick={onSubmit} disabled={loading}>
+            {loading && <span className="button-spinner" aria-hidden="true" />}
+            {loading ? "Running Investigation" : "Run Investigation"}
+          </button>
         </Panel>
         <Panel title="Pipeline Progress">
           <StageList stages={stageState} />
@@ -438,6 +757,15 @@ function Incidents({
         <input className="wide-input" placeholder="Search by incident, scenario, status, or mode" value={filter} onChange={(event) => setFilter(event.target.value)} />
       </Panel>
       <div className="table-panel">
+        {incidents.length > 0 && (
+          <div className="incident-row incident-header">
+            <span>Incident</span>
+            <span>Created</span>
+            <span>Scenario</span>
+            <span>Status</span>
+            <span>Mode</span>
+          </div>
+        )}
         {incidents.length ? incidents.map((incident) => (
           <button className="incident-row" key={incident.incident_id} onClick={() => onOpen(incident.incident_id)}>
             <code>{incident.incident_id}</code>
@@ -455,46 +783,328 @@ function Incidents({
 function VesselIntelligence({
   candidates,
   selected,
-  setSelected
+  setSelected,
+  incidents,
+  lastUpdated,
+  onRefresh
 }: {
   candidates: VesselScore[];
   selected: VesselScore | null;
   setSelected: (vessel: VesselScore) => void;
+  incidents: IncidentSummary[];
+  lastUpdated: Date | null;
+  onRefresh: () => void;
 }) {
   const active = selected ?? candidates[0] ?? null;
+  const total = candidates.length;
+  const highRisk = candidates.filter((vessel) => vessel.priority === "high").length;
+  const highRiskPct = total ? Math.round((highRisk / total) * 100) : 0;
+  const avgScore = total ? candidates.reduce((sum, vessel) => sum + vessel.score, 0) / total : 0;
+  const distances = candidates.map((vessel) => vessel.minimum_distance_km).filter((distance): distance is number => distance != null);
+  const closest = distances.length ? Math.min(...distances) : null;
+
   return (
-    <section className="analysis-grid">
-      <Panel title="Candidate Vessels">
-        <VesselList vessels={candidates} selected={active} onSelect={setSelected} />
-      </Panel>
-      <Panel title="Explainable Attribution">
-        {active ? (
-          <div className="vessel-detail">
-            <div className="vessel-hero">
-              <div>
-                <h2>{active.vessel_name}</h2>
-                <code>{active.mmsi}</code>
+    <section className="dash-grid">
+      <div className="section-heading">
+        <div>
+          <h1>Vessel Intelligence</h1>
+          <p>Analyze vessel candidates and attribution insights for the active investigation.</p>
+        </div>
+        <div className="dash-header-actions">
+          <span className="dash-updated">{lastUpdated ? `Last updated ${formatDate(lastUpdated.toISOString())}` : "Not refreshed yet"}</span>
+          <button className="secondary-button" onClick={onRefresh}>Refresh</button>
+        </div>
+      </div>
+
+      <div className="dash-metric-grid">
+        <DashMetric icon={IconShip} tone="cyan" label="Candidate Vessels" value={total} hint="Across the active investigation" />
+        <DashMetric icon={IconAlertTriangle} tone="amber" label="High Risk Vessels" value={highRisk} hint={total ? `${highRiskPct}% of candidates` : "No candidates yet"} />
+        <DashMetric icon={IconCheck} tone="teal" label="Avg Attribution Score" value={total ? avgScore.toFixed(1) : "n/a"} hint="Average across candidates" />
+        <DashMetric icon={IconRadar} tone="blue" label="Closest Vessel" value={closest != null ? formatKm(closest) : "n/a"} hint="Minimum distance to spill" />
+      </div>
+
+      <div className="vessel-charts-grid">
+        <Panel title="Candidate Vessels Over Time">
+          <CandidateTrendPanel incidents={incidents} />
+        </Panel>
+        <Panel title="Risk Level Distribution">
+          <RiskDonut candidates={candidates} />
+        </Panel>
+      </div>
+
+      <div className="vessel-charts-grid">
+        <Panel title="Average Factor Breakdown">
+          <AverageFactorBreakdown candidates={candidates} />
+        </Panel>
+        <Panel title="Score Distribution">
+          <ScoreDistributionChart candidates={candidates} />
+        </Panel>
+      </div>
+
+      <div className="analysis-grid">
+        <Panel title="Candidate Vessels">
+          <VesselTable vessels={candidates} selected={active} onSelect={setSelected} />
+        </Panel>
+        <Panel title="Explainable Attribution">
+          {active ? (
+            <div className="vessel-detail">
+              <div className="vessel-hero">
+                <div>
+                  <h2>{active.vessel_name}</h2>
+                  <code>{active.mmsi}</code>
+                </div>
+                <div
+                  className="score-gauge"
+                  style={gaugeStyle(active.score)}
+                >
+                  <span>{active.score.toFixed(1)}</span>
+                </div>
               </div>
-              <div className="score-gauge">{active.score.toFixed(1)}</div>
+              <div className="detail-list">
+                <span>Rank</span><strong>{active.rank ?? "n/a"}</strong>
+                <span>Priority</span><strong>{active.priority ?? "unlabelled"}</strong>
+                <span>Closest distance</span><strong>{formatKm(active.minimum_distance_km)}</strong>
+                <span>Relevant time</span><strong>{formatDate(active.nearest_approach_time)}</strong>
+              </div>
+              <FactorBars factors={active.factors} />
+              <h3>Why was this vessel ranked?</h3>
+              <ul className="reason-list">
+                {active.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+              </ul>
+              <p className="disclaimer">AIS gaps and anomaly scores are investigation signals, not proof of wrongdoing.</p>
             </div>
-            <div className="detail-list">
-              <span>Rank</span><strong>{active.rank ?? "n/a"}</strong>
-              <span>Priority</span><strong>{active.priority ?? "unlabelled"}</strong>
-              <span>Closest distance</span><strong>{formatKm(active.minimum_distance_km)}</strong>
-              <span>Relevant time</span><strong>{formatDate(active.nearest_approach_time)}</strong>
-            </div>
-            <FactorBars factors={active.factors} />
-            <h3>Why was this vessel ranked?</h3>
-            <ul className="reason-list">
-              {active.reasons.map((reason) => <li key={reason}>{reason}</li>)}
-            </ul>
-            <p className="disclaimer">AIS gaps and anomaly scores are investigation signals, not proof of wrongdoing.</p>
-          </div>
-        ) : (
-          <EmptyState title="No candidate selected" text="Run an investigation or open an incident with vessel candidates." />
-        )}
-      </Panel>
+          ) : (
+            <EmptyState title="No candidate selected" text="Run an investigation or open an incident with vessel candidates." />
+          )}
+        </Panel>
+      </div>
     </section>
+  );
+}
+
+const RISK_COLORS: Record<"high" | "medium" | "low", string> = {
+  high: "#f87171",
+  medium: "#fbbf24",
+  low: "#5eead4"
+};
+
+function CandidateTrendPanel({ incidents }: { incidents: IncidentSummary[] }) {
+  const [buckets, setBuckets] = useState<Array<{ key: string; label: string; count: number }> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const recent = incidents.slice(0, 8);
+    if (!recent.length) {
+      setBuckets([]);
+      return;
+    }
+    setBuckets(null);
+    Promise.all(
+      recent.map((incident) =>
+        getIncidentVessels(incident.incident_id)
+          .then((response) => ({ incident, count: response.vessels.length }))
+          .catch(() => ({ incident, count: 0 }))
+      )
+    ).then((results) => {
+      if (cancelled) {
+        return;
+      }
+      const counts = new Map<string, number>();
+      results.forEach(({ incident, count }) => {
+        if (!incident.created_at) {
+          return;
+        }
+        const day = incident.created_at.slice(0, 10);
+        counts.set(day, (counts.get(day) ?? 0) + count);
+      });
+      const sorted = Array.from(counts.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-7)
+        .map(([key, count]) => ({
+          key,
+          count,
+          label: new Date(key).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+        }));
+      setBuckets(sorted);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [incidents]);
+
+  if (buckets === null) {
+    return <EmptyState title="Loading candidate history" text="Fetching vessel candidates from persisted incidents." />;
+  }
+  if (!buckets.length) {
+    return <EmptyState title="No incident history yet" text="Candidate trends will appear once investigations are persisted to PostGIS." />;
+  }
+  const max = Math.max(...buckets.map((bucket) => bucket.count), 1);
+  return (
+    <div className="trend-chart">
+      {buckets.map((bucket) => (
+        <div className="trend-bar" key={bucket.key}>
+          <span className="trend-bar-count">{bucket.count}</span>
+          <div className="trend-bar-track">
+            <div className="trend-bar-fill" style={{ height: bucket.count ? `${Math.max(6, (bucket.count / max) * 100)}%` : "0%" }} />
+          </div>
+          <small>{bucket.label}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const FACTOR_LABELS: Array<[keyof VesselScoreFactors, string]> = [
+  ["proximity", "Proximity"],
+  ["temporal_proximity", "Temporal"],
+  ["trajectory_alignment", "Trajectory"],
+  ["speed_anomaly", "Speed"],
+  ["course_anomaly", "Course"],
+  ["ais_gap", "AIS gap"]
+];
+
+function AverageFactorBreakdown({ candidates }: { candidates: VesselScore[] }) {
+  if (!candidates.length) {
+    return <EmptyState title="No candidates yet" text="Average factor breakdown will appear once vessel candidates are scored." />;
+  }
+  return (
+    <div className="factor-bars">
+      {FACTOR_LABELS.map(([key, label]) => {
+        const avg = candidates.reduce((sum, vessel) => sum + Math.max(0, Math.min(1, vessel.factors[key] ?? 0)), 0) / candidates.length;
+        const pct = Math.round(avg * 100);
+        return (
+          <div className="factor-row" key={key}>
+            <span>{label}</span>
+            <div className="factor-track">
+              <div className="factor-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <strong>{pct}</strong>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RiskDonut({ candidates }: { candidates: VesselScore[] }) {
+  const total = candidates.length;
+  if (!total) {
+    return <EmptyState title="No candidates yet" text="Risk distribution will appear once vessel candidates are scored." />;
+  }
+  const counts = { high: 0, medium: 0, low: 0 };
+  candidates.forEach((vessel) => {
+    const key = vessel.priority === "high" ? "high" : vessel.priority === "medium" ? "medium" : "low";
+    counts[key] += 1;
+  });
+  const segments = (["high", "medium", "low"] as const).map((key) => ({
+    key,
+    label: key === "high" ? "High Risk" : key === "medium" ? "Medium Risk" : "Low Risk",
+    count: counts[key],
+    color: RISK_COLORS[key]
+  }));
+  let cursor = 0;
+  const stops = segments
+    .filter((segment) => segment.count > 0)
+    .map((segment) => {
+      const start = (cursor / total) * 360;
+      cursor += segment.count;
+      const end = (cursor / total) * 360;
+      return `${segment.color} ${start}deg ${end}deg`;
+    })
+    .join(", ");
+  return (
+    <div className="donut-widget">
+      <div className="donut-ring" style={{ background: `conic-gradient(${stops})` }}>
+        <div className="donut-center">
+          <strong>{total}</strong>
+          <span>Total</span>
+        </div>
+      </div>
+      <ul className="donut-legend">
+        {segments.map((segment) => (
+          <li key={segment.key}>
+            <span className="legend-dot" style={{ background: segment.color }} />
+            {segment.label}
+            <b>{segment.count}</b>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const SCORE_BUCKETS = [
+  { label: "0-20", min: 0, max: 20 },
+  { label: "20-40", min: 20, max: 40 },
+  { label: "40-60", min: 40, max: 60 },
+  { label: "60-80", min: 60, max: 80 },
+  { label: "80-100", min: 80, max: 100 }
+];
+
+function ScoreDistributionChart({ candidates }: { candidates: VesselScore[] }) {
+  if (!candidates.length) {
+    return <EmptyState title="No scores yet" text="Score distribution will appear once vessel candidates are scored." />;
+  }
+  const buckets = SCORE_BUCKETS.map((bucket) => ({
+    ...bucket,
+    count: candidates.filter((vessel) => vessel.score >= bucket.min && (bucket.max === 100 ? vessel.score <= bucket.max : vessel.score < bucket.max)).length
+  }));
+  const max = Math.max(...buckets.map((bucket) => bucket.count), 1);
+  return (
+    <div className="trend-chart">
+      {buckets.map((bucket) => (
+        <div className="trend-bar" key={bucket.label}>
+          <span className="trend-bar-count">{bucket.count}</span>
+          <div className="trend-bar-track">
+            <div className="trend-bar-fill" style={{ height: bucket.count ? `${Math.max(6, (bucket.count / max) * 100)}%` : "0%" }} />
+          </div>
+          <small>{bucket.label}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VesselTable({
+  vessels,
+  selected,
+  onSelect
+}: {
+  vessels: VesselScore[];
+  selected: VesselScore | null;
+  onSelect: (vessel: VesselScore) => void;
+}) {
+  if (!vessels.length) {
+    return <EmptyState title="No candidate vessels" text="The backend returned no vessel candidates for this investigation." />;
+  }
+  return (
+    <div className="table-panel">
+      <div className="vessel-row vessel-row-header">
+        <span>Vessel</span>
+        <span>MMSI</span>
+        <span>Risk</span>
+        <span>Last Seen</span>
+        <span>Score</span>
+      </div>
+      {vessels.map((vessel) => (
+        <button
+          key={`${vessel.rank}-${vessel.mmsi}`}
+          className={selected?.mmsi === vessel.mmsi ? "vessel-row selected" : "vessel-row"}
+          onClick={() => onSelect(vessel)}
+        >
+          <strong>{vessel.vessel_name}</strong>
+          <code>{vessel.mmsi}</code>
+          <StatusPill label={vessel.priority ?? "unlabelled"} tone={vessel.priority === "high" ? "danger" : vessel.priority === "medium" ? "warn" : "muted"} />
+          <span>{formatDate(vessel.nearest_approach_time)}</span>
+          <span className="vessel-score-cell">
+            <span className="mini-bar-track">
+              <span className="mini-bar-fill" style={{ width: `${Math.min(100, Math.max(0, vessel.score))}%`, background: gaugeColor(vessel.score) }} />
+            </span>
+            <b style={{ color: gaugeColor(vessel.score) }}>{vessel.score.toFixed(1)}</b>
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -540,7 +1150,7 @@ function VesselList({ vessels, selected, onSelect, compact = false }: { vessels:
             <code>{vessel.mmsi}</code>
           </div>
           <div>
-            <b>{vessel.score.toFixed(1)}</b>
+            <b style={{ color: gaugeColor(vessel.score) }}>{vessel.score.toFixed(1)}</b>
             <StatusPill label={vessel.priority ?? "priority"} tone={vessel.priority === "high" ? "danger" : vessel.priority === "medium" ? "warn" : "muted"} />
           </div>
         </button>
@@ -584,14 +1194,31 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function ComponentStatus({ label, value, provenance }: { label: string; value: string; provenance: string }) {
+function ComponentStatus({
+  label,
+  value,
+  provenance,
+  icon: Icon
+}: {
+  label: string;
+  value: string;
+  provenance: string;
+  icon?: ComponentType<SVGProps<SVGSVGElement>>;
+}) {
   return (
     <div className="component-row">
-      <div>
-        <strong>{label}</strong>
-        <span>{provenance}</span>
+      <div className="component-row-top">
+        <div className="component-row-lead">
+          {Icon && (
+            <div className={`dash-icon-badge tone-${categorizeStatus(value)}`}>
+              <Icon width={16} height={16} />
+            </div>
+          )}
+          <strong>{label}</strong>
+        </div>
+        <StatusPill label={value} tone={value.includes("success") || value.includes("available") || value.includes("connected") ? "ok" : "muted"} />
       </div>
-      <StatusPill label={value} tone={value.includes("success") || value.includes("available") || value.includes("connected") ? "ok" : "muted"} />
+      <span className="component-row-provenance">{provenance}</span>
     </div>
   );
 }
@@ -731,6 +1358,24 @@ function formatWindow(value?: { start: string; end: string } | null): string {
 
 function formatKm(value?: number | null): string {
   return value == null ? "not available" : `${value.toFixed(2)} km`;
+}
+
+function gaugeColor(score: number): string {
+  if (score >= 70) {
+    return "#f87171";
+  }
+  if (score >= 40) {
+    return "#fbbf24";
+  }
+  return "#5eead4";
+}
+
+function gaugeStyle(score: number): CSSProperties {
+  const pct = Math.max(0, Math.min(100, score));
+  return {
+    "--pct": pct,
+    "--gauge-color": gaugeColor(score)
+  } as CSSProperties;
 }
 
 export default App;

@@ -12,12 +12,21 @@ const LAYERS: Array<[LayerKey, string]> = [
   ["vessels", "Candidate Vessels"]
 ];
 
+const LAYER_COLORS: Record<LayerKey, string> = {
+  spill: "#f59e0b",
+  backward: "#67e8f9",
+  forward: "#f59e0b",
+  origin: "#22d3ee",
+  vessels: "#94a3b8"
+};
+
 interface MaritimeMapProps {
   result: PipelineResponse | null;
   seed?: { latitude: number; longitude: number } | null;
+  compact?: boolean;
 }
 
-export function MaritimeMap({ result, seed }: MaritimeMapProps) {
+export function MaritimeMap({ result, seed, compact = false }: MaritimeMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const [enabled, setEnabled] = useState<Record<LayerKey, boolean>>({
@@ -100,10 +109,21 @@ export function MaritimeMap({ result, seed }: MaritimeMapProps) {
           "circle-stroke-color": "#06111f"
         }
       });
+      map.resize();
+      const bounds = featureBounds(geojson);
+      if (bounds) {
+        map.fitBounds(bounds, { padding: 60, maxZoom: 11, duration: 0 });
+      }
     });
     mapRef.current = map;
 
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+    });
+    resizeObserver.observe(containerRef.current);
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -116,6 +136,7 @@ export function MaritimeMap({ result, seed }: MaritimeMapProps) {
     }
     const source = map.getSource("investigation") as GeoJSONSource | undefined;
     source?.setData(geojson);
+    map.resize();
     const bounds = featureBounds(geojson);
     if (bounds) {
       map.fitBounds(bounds, { padding: 80, maxZoom: 11, duration: 500 });
@@ -123,23 +144,28 @@ export function MaritimeMap({ result, seed }: MaritimeMapProps) {
   }, [geojson]);
 
   return (
-    <section className="map-shell">
-      <div className="map-toolbar">
-        {LAYERS.map(([key, label]) => (
-          <label key={key} className="layer-toggle">
-            <input
-              type="checkbox"
-              checked={enabled[key]}
-              onChange={(event) => setEnabled((current) => ({ ...current, [key]: event.target.checked }))}
-            />
-            {label}
-          </label>
-        ))}
-      </div>
+    <section className={compact ? "map-shell map-shell-compact" : "map-shell"}>
+      {!compact && (
+        <div className="map-toolbar">
+          {LAYERS.map(([key, label]) => (
+            <label key={key} className="layer-toggle">
+              <input
+                type="checkbox"
+                checked={enabled[key]}
+                onChange={(event) => setEnabled((current) => ({ ...current, [key]: event.target.checked }))}
+              />
+              <span className="legend-dot" style={{ background: LAYER_COLORS[key] }} />
+              {label}
+            </label>
+          ))}
+        </div>
+      )}
       <div ref={containerRef} className="map-canvas" />
-      <div className="map-note">
-        Map plots only backend geographic coordinates. Module A image-space masks are not georeferenced here.
-      </div>
+      {!compact && (
+        <div className="map-note">
+          Map plots only backend geographic coordinates. Module A image-space masks are not georeferenced here.
+        </div>
+      )}
     </section>
   );
 }

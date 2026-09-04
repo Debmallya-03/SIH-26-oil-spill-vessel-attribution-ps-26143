@@ -2,7 +2,7 @@
 
 ### Marine AI for Reconnaissance, Investigation & Spill Attribution
 
-**Smart India Hackathon 2026  **
+**Smart India Hackathon 2026**
 
 > AI-Powered Marine Oil Spill Detection, Hindcasting, Drift Forecasting & Explainable Vessel Attribution
 

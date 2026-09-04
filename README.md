@@ -55,7 +55,6 @@ The system is designed to support analysts, not replace scientific or legal revi
 
 ## Problem Statement
 
-**Problem Statement ID:** PS 26143
 **Problem:** Marine oil spills can cause severe ecosystem damage while the vessel responsible may remain unidentified.
 
 The investigation challenge has three connected parts:

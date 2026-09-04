@@ -81,8 +81,13 @@ def normalize_record(row: dict[str, object]) -> AISRecord:
     if missing:
         raise AISDataError(f"AIS record missing required fields: {missing}")
 
-    latitude = float(normalized["latitude"])
-    longitude = float(normalized["longitude"])
+    try:
+        latitude = float(normalized["latitude"])
+        longitude = float(normalized["longitude"])
+        sog = float(normalized["sog"])
+        cog = float(normalized["cog"]) % 360
+    except (TypeError, ValueError) as exc:
+        raise AISDataError("AIS record contains invalid numeric fields.") from exc
     try:
         validate_coordinate(latitude, longitude)
     except ValueError as exc:
@@ -92,8 +97,8 @@ def normalize_record(row: dict[str, object]) -> AISRecord:
         timestamp=parse_timestamp(normalized["timestamp"]),
         latitude=latitude,
         longitude=longitude,
-        sog=float(normalized["sog"]),
-        cog=float(normalized["cog"]) % 360,
+        sog=sog,
+        cog=cog,
         vessel_name=_optional_string(normalized.get("vessel_name")),
         ship_type=_optional_string(normalized.get("ship_type")),
         heading=_optional_float(normalized.get("heading")),

@@ -55,6 +55,9 @@ class AttributionModuleTests(unittest.TestCase):
         with self.assertRaises(AISDataError):
             normalize_record({"MMSI": "1", "BaseDateTime": "2026-08-26T06:00:00Z", "LAT": "99", "LON": "72.8", "SOG": "1", "COG": "2"})
 
+        with self.assertRaises(AISDataError):
+            normalize_record({"MMSI": "1", "BaseDateTime": "2026-08-26T06:00:00Z", "LAT": "18.5", "LON": "72.8", "SOG": "1", "COG": ""})
+
     def test_parse_timestamp_assumes_utc_when_naive(self) -> None:
         parsed = parse_timestamp("2026-08-26T06:00:00")
 
@@ -90,6 +93,18 @@ class AttributionModuleTests(unittest.TestCase):
         self.assertEqual(response.suspects[0].mmsi, "419000002")
         self.assertGreaterEqual(response.suspects[0].score, response.suspects[1].score)
         self.assertLessEqual(max(suspect.minimum_distance_km for suspect in response.suspects), 25.0)
+
+    def test_synthetic_candidates_include_ordered_trajectory_provenance(self) -> None:
+        response = score_suspect_vessels(
+            ScoreRequest(origin_centroid=ORIGIN, origin_time_window=WINDOW, mode="synthetic_dev")
+        )
+        top = response.suspects[0]
+
+        self.assertEqual(top.trajectory_source, "synthetic_dev")
+        self.assertGreaterEqual(len(top.trajectory), 2)
+        self.assertTrue(all(top.trajectory[index].timestamp <= top.trajectory[index + 1].timestamp for index in range(len(top.trajectory) - 1)))
+        self.assertTrue(all(-90 <= point.latitude <= 90 and -180 <= point.longitude <= 180 for point in top.trajectory))
+        self.assertTrue(any(point.timestamp == top.nearest_approach_time for point in top.trajectory))
 
     def test_haversine_and_circular_cog_difference(self) -> None:
         self.assertAlmostEqual(haversine_distance_km(18.5, 72.8, 18.5, 72.8), 0.0)
@@ -203,6 +218,44 @@ class AttributionModuleTests(unittest.TestCase):
         self.assertEqual(response.status, "success")
         self.assertEqual(response.mode, "real_data")
         self.assertEqual(response.candidate_count, 1)
+        self.assertEqual(response.suspects[0].trajectory_source, "historical_ais")
+        self.assertEqual([point.timestamp.isoformat() for point in response.suspects[0].trajectory], [
+            "2026-08-26T06:00:00+00:00",
+            "2026-08-26T06:10:00+00:00",
+        ])
+
+    def test_real_data_gulf_coast_validation_does_not_mix_with_mumbai_demo(self) -> None:
+        previous_path = settings.ais_data_path
+        temp_dir = REPO_ROOT / ".test_tmp_attribution_gulf"
+        gulf_origin = {"latitude": 29.7732211097852, "longitude": -90.06771383054893}
+        gulf_window = {"start": "2024-01-14T03:00:00Z", "end": "2024-01-14T04:00:00Z"}
+        try:
+            temp_dir.mkdir(exist_ok=True)
+            csv_path = temp_dir / "ais_gulf.csv"
+            csv_path.write_text(
+                "mmsi,base_date_time,latitude,longitude,sog,cog,heading,vessel_name\n"
+                "367111111,2024-01-14T03:10:00Z,29.773,-90.068,6,180,180,Gulf Validation Vessel\n"
+                "367111111,2024-01-14T03:20:00Z,29.774,-90.067,6,181,181,Gulf Validation Vessel\n",
+                encoding="utf-8",
+            )
+            settings.ais_data_path = str(csv_path)
+            real_response = score_suspect_vessels(
+                ScoreRequest(origin_centroid=gulf_origin, origin_time_window=gulf_window, mode="real_data")
+            )
+            demo_response = score_suspect_vessels(
+                ScoreRequest(origin_centroid=ORIGIN, origin_time_window=WINDOW, mode="synthetic_dev")
+            )
+        finally:
+            settings.ais_data_path = previous_path
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+
+        self.assertEqual(real_response.status, "success")
+        self.assertEqual(real_response.scenario, "algorithm_validation")
+        self.assertEqual(real_response.suspects[0].trajectory_source, "historical_ais")
+        self.assertEqual(real_response.suspects[0].mmsi, "367111111")
+        self.assertEqual(demo_response.scenario, "mumbai_synthetic_demo")
+        self.assertTrue(all(suspect.trajectory_source == "synthetic_dev" for suspect in demo_response.suspects))
 
     def test_csv_zst_streaming_and_chunk_limit(self) -> None:
         import zstandard as zstd

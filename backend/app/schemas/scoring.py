@@ -41,6 +41,15 @@ class VesselScoreFactors(BaseModel):
     ais_gap: float
 
 
+class AISTrajectoryPoint(BaseModel):
+    timestamp: datetime
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    sog: float | None = None
+    cog: float | None = None
+    heading: float | None = None
+
+
 class VesselScore(BaseModel):
     rank: int | None = None
     mmsi: str
@@ -51,6 +60,8 @@ class VesselScore(BaseModel):
     nearest_approach_time: datetime | None = None
     factors: VesselScoreFactors
     reasons: list[str]
+    trajectory: list[AISTrajectoryPoint] = Field(default_factory=list)
+    trajectory_source: str | None = None
 
 
 class ScoreResponse(BaseModel):

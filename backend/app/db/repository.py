@@ -111,10 +111,12 @@ def get_incident(incident_id: str) -> dict[str, object] | None:
 def get_vessel_candidates_for_incident(incident_id: str) -> list[dict[str, object]]:
     with get_connection() as connection:
         with connection.cursor() as cursor:
+            _ensure_vessel_trajectory_columns(cursor)
+            connection.commit()
             cursor.execute(
                 """
                 SELECT rank, mmsi, vessel_name, score, priority, minimum_distance_km,
-                       nearest_approach_time, factors, reasons
+                       nearest_approach_time, factors, reasons, trajectory_points, trajectory_source
                 FROM vessel_candidates
                 WHERE incident_id = %s
                 ORDER BY rank NULLS LAST, score DESC
@@ -132,6 +134,8 @@ def get_vessel_candidates_for_incident(incident_id: str) -> list[dict[str, objec
                     "nearest_approach_time": row[6],
                     "factors": row[7],
                     "reasons": row[8],
+                    "trajectory": row[9] or [],
+                    "trajectory_source": row[10],
                 }
                 for row in cursor.fetchall()
             ]
@@ -173,14 +177,19 @@ def _insert_drift(cursor, incident_uuid: UUID, drift: DriftResponse, request: Pi
 
 
 def _insert_vessels(cursor, incident_uuid: UUID, attribution: ScoreResponse) -> None:
+    _ensure_vessel_trajectory_columns(cursor)
     for vessel in attribution.suspects:
         cursor.execute(
             """
             INSERT INTO vessel_candidates (
                 id, incident_id, rank, mmsi, vessel_name, score, priority,
-                minimum_distance_km, nearest_approach_time, factors, reasons
+                minimum_distance_km, nearest_approach_time, factors, reasons,
+                trajectory, trajectory_points, trajectory_source
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                ST_SetSRID(ST_GeomFromText(%s), 4326), %s, %s
+            )
             """,
             (
                 uuid4(),
@@ -194,6 +203,9 @@ def _insert_vessels(cursor, incident_uuid: UUID, attribution: ScoreResponse) -> 
                 vessel.nearest_approach_time,
                 Jsonb(vessel.factors.model_dump(mode="json")),
                 Jsonb(vessel.reasons),
+                _trajectory_line_wkt(vessel.trajectory),
+                Jsonb([point.model_dump(mode="json") for point in vessel.trajectory]),
+                vessel.trajectory_source,
             ),
         )
 
@@ -222,3 +234,18 @@ def _polygon_wkt(polygon: PolygonGeometry | None) -> str | None:
         return None
     return "POLYGON((" + ", ".join(f"{longitude} {latitude}" for longitude, latitude in ring) + "))"
 
+
+def _trajectory_line_wkt(points) -> str | None:
+    if len(points) < 2:
+        return None
+    return "LINESTRING(" + ", ".join(f"{point.longitude} {point.latitude}" for point in points) + ")"
+
+
+def _ensure_vessel_trajectory_columns(cursor) -> None:
+    cursor.execute(
+        """
+        ALTER TABLE vessel_candidates
+            ADD COLUMN IF NOT EXISTS trajectory_points JSONB NOT NULL DEFAULT '[]'::jsonb,
+            ADD COLUMN IF NOT EXISTS trajectory_source TEXT
+        """
+    )

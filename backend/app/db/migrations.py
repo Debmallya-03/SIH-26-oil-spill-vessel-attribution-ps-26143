@@ -51,8 +51,14 @@ CREATE TABLE IF NOT EXISTS vessel_candidates (
     factors JSONB NOT NULL DEFAULT '{}'::jsonb,
     reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
     trajectory GEOMETRY(LineString, 4326),
+    trajectory_points JSONB NOT NULL DEFAULT '[]'::jsonb,
+    trajectory_source TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE vessel_candidates
+    ADD COLUMN IF NOT EXISTS trajectory_points JSONB NOT NULL DEFAULT '[]'::jsonb,
+    ADD COLUMN IF NOT EXISTS trajectory_source TEXT;
 """
 
 
@@ -61,4 +67,3 @@ def initialize_database() -> None:
         with connection.cursor() as cursor:
             cursor.execute(SCHEMA_SQL)
         connection.commit()
-

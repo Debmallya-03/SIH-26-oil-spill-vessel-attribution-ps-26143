@@ -103,6 +103,9 @@ function App() {
       setHealth(healthResponse);
       if (incidentResponse.status === "success") {
         setIncidents(incidentResponse.incidents);
+      } else {
+        setIncidents([]);
+        setError(incidentResponse.message ?? "Incident persistence is unavailable.");
       }
       setLastUpdated(new Date());
     } catch (apiError) {
@@ -239,6 +242,7 @@ function App() {
           {page === "incidents" && (
             <Incidents
               incidents={filteredIncidents}
+              dbConnected={health?.database?.status === "connected"}
               filter={incidentFilter}
               setFilter={setIncidentFilter}
               onOpen={openIncident}
@@ -291,13 +295,13 @@ function Overview({
     {
       label: "SAR Detection",
       value: result?.detection?.status ?? "available via /detect",
-      provenance: "Synthetic development checkpoint when demo pipeline is used",
+      provenance: result?.detection?.model_dataset_type ?? "Deep-SAR SOS checkpoint when demo pipeline is used",
       icon: IconRadar
     },
     {
       label: "Ocean Drift Engine",
-      value: result?.drift?.engine ?? "development_drift_engine",
-      provenance: "Copernicus Marine + NOAA GFS in real_data mode",
+      value: result?.drift?.engine ?? health?.opendrift?.engine ?? "available via /drift",
+      provenance: result?.data_provenance?.drift_forcing_strategy ?? "Copernicus Marine + NOAA GFS in real_data mode",
       icon: IconWaves
     },
     {
@@ -711,10 +715,20 @@ function LiveInvestigation({
               <span>Incident ID</span><code>{result.incident_id}</code>
               <span>Status</span><strong>{result.status}</strong>
               <span>Detection</span><strong>{result.detection.status}</strong>
+              <span>Detection model</span><strong>{result.detection.model ?? "not reported"}</strong>
+              <span>Dataset</span><strong>{result.detection.model_dataset_type ?? result.data_provenance?.sar ?? "not reported"}</strong>
+              <span>Confidence</span><strong>{formatPercent(result.detection.confidence)}</strong>
+              <span>Area</span><strong>{formatPixels(result.detection.area_pixels)}</strong>
+              <span>Perimeter</span><strong>{formatPixels(result.detection.perimeter_pixels)}</strong>
+              <span>Hindcasting engine</span><strong>{result.drift?.engine ?? "not available"}</strong>
+              <span>Forcing strategy</span><strong>{result.data_provenance?.drift_forcing_strategy ?? result.drift?.metadata?.forcing_strategy ?? "not reported"}</strong>
               <span>Estimated origin</span><strong>{formatCoordinate(result.drift?.origin_centroid)}</strong>
               <span>Origin window</span><strong>{formatWindow(result.drift?.origin_time_window)}</strong>
+              <span>Hindcast points</span><strong>{result.drift?.backward_path?.coordinates?.length ?? 0}</strong>
+              <span>Forecast points</span><strong>{result.drift?.forward_path?.coordinates?.length ?? 0}</strong>
               <span>Candidates</span><strong>{result.summary.candidate_vessels ?? candidates.length}</strong>
               <span>Top candidate</span><strong>{result.summary.top_candidate?.vessel_name ?? "None"}</strong>
+              <span>Persistence</span><strong>{result.persistence.status}</strong>
             </div>
           ) : (
             <EmptyState title="No active investigation" text="Run the demo scenario or open a persisted incident." />
@@ -724,6 +738,14 @@ function LiveInvestigation({
           <Provenance result={result} />
         </Panel>
         <Panel title="Ranked Candidates">
+          {result?.attribution?.mode && (
+            <div className="inline-badges">
+              <StatusPill
+                label={result.attribution.mode === "synthetic_dev" ? "Synthetic AIS Demo" : "Historical AIS"}
+                tone={result.attribution.mode === "synthetic_dev" ? "warn" : "ok"}
+              />
+            </div>
+          )}
           <VesselList vessels={candidates} selected={selectedVessel} onSelect={setSelectedVessel} compact />
         </Panel>
       </aside>
@@ -733,12 +755,14 @@ function LiveInvestigation({
 
 function Incidents({
   incidents,
+  dbConnected,
   filter,
   setFilter,
   onOpen,
   onRefresh
 }: {
   incidents: IncidentSummary[];
+  dbConnected: boolean;
   filter: string;
   setFilter: (value: string) => void;
   onOpen: (id: string) => void;
@@ -774,7 +798,12 @@ function Incidents({
             <StatusPill label={incident.status ?? "unknown"} tone={incident.status === "completed" ? "ok" : "warn"} />
             <span>{incident.pipeline_mode ?? "not recorded"}</span>
           </button>
-        )) : <EmptyState title="No incidents available" text="PostGIS may be empty or unavailable." />}
+        )) : (
+          <EmptyState
+            title={dbConnected ? "No persisted incidents yet" : "Persistence unavailable"}
+            text={dbConnected ? "Run a persisted investigation to populate incident history." : "PostGIS is unavailable, so persisted incidents cannot be loaded."}
+          />
+        )}
       </div>
     </section>
   );
@@ -802,15 +831,17 @@ function VesselIntelligence({
   const avgScore = total ? candidates.reduce((sum, vessel) => sum + vessel.score, 0) / total : 0;
   const distances = candidates.map((vessel) => vessel.minimum_distance_km).filter((distance): distance is number => distance != null);
   const closest = distances.length ? Math.min(...distances) : null;
+  const sourceLabel = candidates[0]?.trajectory_source === "historical_ais" ? "Historical AIS" : candidates[0]?.trajectory_source === "synthetic_dev" ? "Synthetic AIS Demo" : "AIS source not available";
 
   return (
     <section className="dash-grid">
       <div className="section-heading">
         <div>
           <h1>Vessel Intelligence</h1>
-          <p>Analyze vessel candidates and attribution insights for the active investigation.</p>
+          <p>Analyze candidate vessels and explainable attribution signals for the active investigation.</p>
         </div>
         <div className="dash-header-actions">
+          <StatusPill label={sourceLabel} tone={sourceLabel === "Historical AIS" ? "ok" : sourceLabel === "Synthetic AIS Demo" ? "warn" : "muted"} />
           <span className="dash-updated">{lastUpdated ? `Last updated ${formatDate(lastUpdated.toISOString())}` : "Not refreshed yet"}</span>
           <button className="secondary-button" onClick={onRefresh}>Refresh</button>
         </div>
@@ -818,7 +849,7 @@ function VesselIntelligence({
 
       <div className="dash-metric-grid">
         <DashMetric icon={IconShip} tone="cyan" label="Candidate Vessels" value={total} hint="Across the active investigation" />
-        <DashMetric icon={IconAlertTriangle} tone="amber" label="High Risk Vessels" value={highRisk} hint={total ? `${highRiskPct}% of candidates` : "No candidates yet"} />
+        <DashMetric icon={IconAlertTriangle} tone="amber" label="High Priority Vessels" value={highRisk} hint={total ? `${highRiskPct}% of candidates` : "No candidates yet"} />
         <DashMetric icon={IconCheck} tone="teal" label="Avg Attribution Score" value={total ? avgScore.toFixed(1) : "n/a"} hint="Average across candidates" />
         <DashMetric icon={IconRadar} tone="blue" label="Closest Vessel" value={closest != null ? formatKm(closest) : "n/a"} hint="Minimum distance to spill" />
       </div>
@@ -827,7 +858,7 @@ function VesselIntelligence({
         <Panel title="Candidate Vessels Over Time">
           <CandidateTrendPanel incidents={incidents} />
         </Panel>
-        <Panel title="Risk Level Distribution">
+        <Panel title="Priority Distribution">
           <RiskDonut candidates={candidates} />
         </Panel>
       </div>
@@ -998,7 +1029,7 @@ function RiskDonut({ candidates }: { candidates: VesselScore[] }) {
   });
   const segments = (["high", "medium", "low"] as const).map((key) => ({
     key,
-    label: key === "high" ? "High Risk" : key === "medium" ? "Medium Risk" : "Low Risk",
+    label: key === "high" ? "High Priority" : key === "medium" ? "Medium Priority" : "Low Priority",
     count: counts[key],
     color: RISK_COLORS[key]
   }));
@@ -1082,7 +1113,7 @@ function VesselTable({
       <div className="vessel-row vessel-row-header">
         <span>Vessel</span>
         <span>MMSI</span>
-        <span>Risk</span>
+        <span>Priority</span>
         <span>Last Seen</span>
         <span>Score</span>
       </div>
@@ -1121,14 +1152,16 @@ function SystemStatus({ health, result, onRefresh }: { health: HealthResponse | 
       <div className="metric-grid">
         <Metric label="Backend API" value={health?.status ?? "checking"} />
         <Metric label="Database/PostGIS" value={health?.database?.status ?? "unknown"} />
+        <Metric label="OpenDrift/OpenOil" value={health?.opendrift?.status ?? "unknown"} />
         <Metric label="Detection Module" value={result?.detection?.status ?? "ready endpoint"} />
         <Metric label="Pipeline" value={result?.status ?? "idle"} />
       </div>
       <Panel title="Scientific Labeling">
         <div className="notice-list">
-          <p>Module A synthetic checkpoint metrics are development only.</p>
-          <p>Real drift uses Copernicus Marine currents and NOAA GFS wind with the development drift engine, not OpenDrift/OpenOil.</p>
-          <p>Synthetic AIS demo tracks are not real-world evidence.</p>
+          <p>Deep-SAR SOS metrics are validation metrics only, not operational field accuracy.</p>
+          <p>Module A returns image-space segmentation; geographic spill seeds are explicitly supplied.</p>
+          <p>Real drift uses Copernicus Marine currents and NOAA GFS wind with OpenDrift/OpenOil when the backend reports it available.</p>
+          <p>Synthetic AIS demo candidates are not real-world vessel evidence.</p>
           <p>Candidate scores support investigation prioritization only.</p>
         </div>
       </Panel>
@@ -1358,6 +1391,14 @@ function formatWindow(value?: { start: string; end: string } | null): string {
 
 function formatKm(value?: number | null): string {
   return value == null ? "not available" : `${value.toFixed(2)} km`;
+}
+
+function formatPercent(value?: number | null): string {
+  return value == null ? "not available" : `${(value * 100).toFixed(1)}%`;
+}
+
+function formatPixels(value?: number | null): string {
+  return value == null ? "not available" : `${Math.round(value).toLocaleString()} px`;
 }
 
 function gaugeColor(score: number): string {

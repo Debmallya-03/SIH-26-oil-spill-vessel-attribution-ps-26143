@@ -45,6 +45,7 @@ desktop.ini
 *.pt
 *.ckpt
 *.onnx
+test_model.zip
 *.h5
 *.pkl
 *.joblib

@@ -62,6 +62,11 @@ export interface DriftMetadata {
   nearest_current_substitutions?: Record<string, unknown>[];
   max_nearest_current_distance_km?: number | null;
   max_actual_substitution_distance_km?: number | null;
+  forcing_strategy?: string | null;
+  opendrift_version?: string | null;
+  current_reader?: string | null;
+  wind_reader?: string | null;
+  forcing_coverage_status?: string | null;
 }
 
 export interface DriftResponse {
@@ -100,6 +105,15 @@ export interface VesselScore {
   nearest_approach_time?: string | null;
   factors: VesselScoreFactors;
   reasons: string[];
+  trajectory?: Array<{
+    timestamp: string;
+    latitude: number;
+    longitude: number;
+    sog?: number | null;
+    cog?: number | null;
+    heading?: number | null;
+  }>;
+  trajectory_source?: string | null;
 }
 
 export interface ScoreResponse {

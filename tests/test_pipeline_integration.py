@@ -16,7 +16,7 @@ from app.modules.pipeline import orchestrator
 from app.schemas.detection import DetectionResponse, GeoCoordinate, ImageCoordinate, PolygonGeometry as DetectionPolygon
 from app.schemas.drift import DriftMetadata, DriftResponse, LineStringGeometry, OriginWindow, PolygonGeometry as DriftPolygon
 from app.schemas.pipeline import PipelineRequest, SpillSeed
-from app.schemas.scoring import ScoreResponse, VesselScore, VesselScoreFactors
+from app.schemas.scoring import AISTrajectoryPoint, ScoreResponse, VesselScore, VesselScoreFactors
 
 
 DEMO_TIME = datetime(2026, 8, 26, 12, 0, tzinfo=UTC)
@@ -104,6 +104,23 @@ def _fake_score() -> ScoreResponse:
                     ais_gap=0.8,
                 ),
                 reasons=["Closest approach: 0.72 km from estimated origin."],
+                trajectory=[
+                    AISTrajectoryPoint(
+                        timestamp=datetime(2026, 8, 26, 6, 0, tzinfo=UTC),
+                        latitude=18.522,
+                        longitude=72.789,
+                        sog=8.0,
+                        cog=91.0,
+                    ),
+                    AISTrajectoryPoint(
+                        timestamp=datetime(2026, 8, 26, 6, 10, tzinfo=UTC),
+                        latitude=18.523,
+                        longitude=72.799,
+                        sog=7.5,
+                        cog=93.0,
+                    ),
+                ],
+                trajectory_source="synthetic_dev",
             )
         ],
     )
@@ -157,10 +174,33 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(result.persistence.status, "persisted")
         self.assertEqual(result.summary.candidate_vessels, 1)
         self.assertEqual(result.summary.top_candidate.mmsi, "419000001")
+        self.assertEqual(result.summary.top_candidate.trajectory_source, "synthetic_dev")
+        self.assertEqual(len(result.summary.top_candidate.trajectory), 2)
         self.assertEqual(result.data_provenance["spill_seed"], "user_supplied")
         self.assertEqual(result.data_provenance["drift_engine"], "opendrift_openoil")
         self.assertEqual(result.data_provenance["drift_forcing_strategy"], "native_grid")
         self.assertGreater(result.timings_ms["total"], 0)
+
+    def test_candidate_without_trajectory_remains_valid(self) -> None:
+        candidate = VesselScore(
+            rank=1,
+            mmsi="419000009",
+            vessel_name="No Track Vessel",
+            score=42.0,
+            priority="low",
+            factors=VesselScoreFactors(
+                proximity=0.2,
+                temporal_proximity=0.2,
+                trajectory_alignment=0.2,
+                speed_anomaly=0.0,
+                course_anomaly=0.0,
+                ais_gap=0.0,
+            ),
+            reasons=["Candidate retained without visualization trajectory."],
+        )
+
+        self.assertEqual(candidate.trajectory, [])
+        self.assertIsNone(candidate.trajectory_source)
 
     def test_pipeline_never_converts_image_centroid_to_geographic_coordinates(self) -> None:
         drift_called = False
@@ -262,6 +302,10 @@ class PipelineIntegrationTests(unittest.TestCase):
             "LINESTRING(72.8 18.5, 72.9 18.6)",
         )
         self.assertEqual(
+            repository._trajectory_line_wkt(_fake_score().suspects[0].trajectory),
+            "LINESTRING(72.789 18.522, 72.799 18.523)",
+        )
+        self.assertEqual(
             repository._polygon_wkt(DriftPolygon(coordinates=[[[72.8, 18.5], [72.9, 18.5], [72.9, 18.6], [72.8, 18.5]]])),
             "POLYGON((72.8 18.5, 72.9 18.5, 72.9 18.6, 72.8 18.5))",
         )
@@ -272,6 +316,8 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertIn("CREATE TABLE IF NOT EXISTS detections", migrations.SCHEMA_SQL)
         self.assertIn("CREATE TABLE IF NOT EXISTS drift_runs", migrations.SCHEMA_SQL)
         self.assertIn("CREATE TABLE IF NOT EXISTS vessel_candidates", migrations.SCHEMA_SQL)
+        self.assertIn("trajectory_points JSONB", migrations.SCHEMA_SQL)
+        self.assertIn("trajectory_source TEXT", migrations.SCHEMA_SQL)
 
     def test_database_url_is_built_from_database_fields_when_url_is_placeholder(self) -> None:
         settings = Settings(

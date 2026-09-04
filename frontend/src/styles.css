@@ -471,6 +471,12 @@ h3 {
   gap: 14px;
 }
 
+.inline-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .dash-updated {
   color: var(--text-muted);
   font-size: 12px;
@@ -1235,6 +1241,11 @@ select:focus {
 
 .layer-toggle input {
   min-height: auto;
+}
+
+.layer-toggle-disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .legend-dot {

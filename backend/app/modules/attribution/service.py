@@ -6,7 +6,9 @@ from app.modules.attribution.features import extract_features
 from app.modules.attribution.scoring import WEIGHTS, score_vessel
 from app.modules.attribution.synthetic_ais import generate_synthetic_ais_records
 from app.modules.attribution.trajectory import build_tracks, filter_track_by_time, nearest_point_to_origin
-from app.schemas.scoring import ScoreRequest, ScoreResponse, VesselScore, VesselScoreFactors
+from app.schemas.scoring import AISTrajectoryPoint, ScoreRequest, ScoreResponse, VesselScore, VesselScoreFactors
+
+MAX_TRAJECTORY_POINTS = 200
 
 
 def score_suspect_vessels(request: ScoreRequest) -> ScoreResponse:
@@ -69,6 +71,8 @@ def score_suspect_vessels(request: ScoreRequest) -> ScoreResponse:
                 nearest_approach_time=features.nearest_approach_time,
                 factors=VesselScoreFactors(**composite.factors),
                 reasons=composite.reasons[:6],
+                trajectory=_serialize_trajectory(track.points, features.nearest_approach_time),
+                trajectory_source="synthetic_dev" if mode == "synthetic_dev" else "historical_ais",
             )
         )
 
@@ -124,3 +128,40 @@ def _load_records(
             bbox=bbox_around_point(latitude, longitude, radius_km),
         )
     raise AISDataError(f"Unsupported AIS mode: {mode}")
+
+
+def _serialize_trajectory(records, nearest_approach_time) -> list[AISTrajectoryPoint]:
+    ordered = sorted(records, key=lambda record: record.timestamp)
+    selected = _downsample_records(ordered, nearest_approach_time, MAX_TRAJECTORY_POINTS)
+    return [
+        AISTrajectoryPoint(
+            timestamp=record.timestamp,
+            latitude=record.latitude,
+            longitude=record.longitude,
+            sog=record.sog,
+            cog=record.cog,
+            heading=record.heading,
+        )
+        for record in selected
+    ]
+
+
+def _downsample_records(records, nearest_approach_time, limit: int):
+    if len(records) <= limit:
+        return records
+
+    keep_indexes = {0, len(records) - 1}
+    if nearest_approach_time is not None:
+        nearest_index = min(
+            range(len(records)),
+            key=lambda index: abs((records[index].timestamp - nearest_approach_time).total_seconds()),
+        )
+        keep_indexes.update(range(max(0, nearest_index - 2), min(len(records), nearest_index + 3)))
+
+    remaining_slots = max(limit - len(keep_indexes), 0)
+    if remaining_slots:
+        step = max((len(records) - 1) / remaining_slots, 1)
+        for offset in range(remaining_slots):
+            keep_indexes.add(round(offset * step))
+
+    return [records[index] for index in sorted(keep_indexes)[:limit]]

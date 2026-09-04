@@ -2,7 +2,7 @@
 
 ### Marine AI for Reconnaissance, Investigation & Spill Attribution
 
-**Smart India Hackathon 2026 - PS 26143**
+**Smart India Hackathon 2026  **
 
 > AI-Powered Marine Oil Spill Detection, Hindcasting, Drift Forecasting & Explainable Vessel Attribution
 
@@ -631,8 +631,3 @@ Detailed documentation is intentionally kept in `docs/` and project subfolders. 
 
 ## Smart India Hackathon 2026
 
-**Problem Statement:** PS 26143
-**Project:** MARIS - Marine AI for Reconnaissance, Investigation & Spill Attribution
-**Category:** Software
-
-Team-member names are not stored in the repository, so this README does not invent them.
